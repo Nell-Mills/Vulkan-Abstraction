@@ -6,10 +6,10 @@ $(wildcard ../*.c)
 DEPS_THIRD_PARTY :=\
 $(wildcard Third-Party/Volk/*.c)
 
-CC	:= gcc -std=c99 -Wall -Wextra
+CC	:= gcc -std=c99 -Wall -Wextra -Wno-unused-parameter
 OUT	:= VKA-Demo
 MAIN	:= VKA-Demo.c
-DEPS	:= $(DEPS_ENGINE) $(DEPS_THIRD_PARTY)
+DEPS	:= $(DEPS_PROJECT) $(DEPS_THIRD_PARTY)
 CFLAGS	:= -I Third-Party
 LFLAGS	:= -L Libs -Wl,-rpath '$$ORIGIN/Libs' -lSDL3
 DEFINES	:=
