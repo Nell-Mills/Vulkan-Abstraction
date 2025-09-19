@@ -1,4 +1,4 @@
-# Compile the Vulkan Abstraction project.
+# Compile the Vulkan Abstraction project demo.
 
 DEPS_PROJECT :=\
 $(wildcard ../*.c)

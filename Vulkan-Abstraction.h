@@ -10,6 +10,8 @@
 #include <SDL3/SDL_vulkan.h>
 #include <Volk/volk.h>
 
+#define VKA_API_VERSION_MAJOR 1
+#define VKA_API_VERSION_MINOR 3
 #define VKA_MAX_NAME_LENGTH 64
 #define VKA_ERROR_MESSAGE_LENGTH 1024
 #define VKA_ERROR -1
@@ -33,6 +35,10 @@ typedef struct
 	VkPhysicalDeviceVulkan11Features enabled_features_11;
 	VkPhysicalDeviceVulkan12Features enabled_features_12;
 	VkPhysicalDeviceVulkan13Features enabled_features_13;
+
+	// Limits:
+	VkDeviceSize max_memory_allocation_size;
+	int max_sampler_descriptors;
 } vka_vulkan_config_t;
 
 typedef struct
@@ -64,13 +70,15 @@ typedef struct
 vka_vulkan_t vka_vulkan_initialise();
 int vka_vulkan_setup(vka_vulkan_t *vulkan);
 void vka_vulkan_shutdown(vka_vulkan_t *vulkan);
-void vka_print_vulkan(vka_vulkan_t *vulkan, FILE *file);
 
 // Main Vulkan base helpers:
 int vka_create_window(vka_vulkan_t *vulkan);
 int vka_create_instance(vka_vulkan_t *vulkan);
 int vka_create_surface(vka_vulkan_t *vulkan);
 int vka_create_device(vka_vulkan_t *vulkan);
+int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_device,
+		uint32_t *graphics_family_index, uint32_t *present_family_index,
+		VkDeviceSize *max_memory_allocation_size, VkBool32 *sampler_anisotropy);
 
 // Utility:
 void vka_device_wait_idle(vka_vulkan_t *vulkan);
@@ -86,6 +94,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_util_callback(
 	void *user_pointer);
 char *vka_debug_get_severity(VkDebugUtilsMessageSeverityFlagBitsEXT severity);
 char *vka_debug_get_type(VkDebugUtilsMessageTypeFlagsEXT type);
+
+void vka_print_vulkan(vka_vulkan_t *vulkan, FILE *file);
 #endif
 
 #endif

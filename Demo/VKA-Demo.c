@@ -6,15 +6,25 @@ int main(int argc, char **argv)
 	int error = vka_vulkan_setup(&vulkan);
 	if (error)
 	{
+		printf("Error: %s", vulkan.error_message);
 		vka_vulkan_shutdown(&vulkan);
 		return -1;
 	}
 	#ifdef VKA_DEBUG
 	vka_print_vulkan(&vulkan, stdout);
 	#endif
+
+	SDL_Event event;
+	int running = 1;
+	while(running)
+	{
+		while (SDL_PollEvent(&event) != 0)
+		{
+			if (event.type == SDL_EVENT_QUIT) { running = 0; }
+		}
+	}
+
 	vka_vulkan_shutdown(&vulkan);
-
-	printf("Error: %s\n", vulkan.error_message);
-
+	if (strcmp(vulkan.error_message, "") != 0) { printf("Error: %s", vulkan.error_message); }
 	return 0;
 }
