@@ -15,14 +15,13 @@
 #define VKA_MAX_NAME_LENGTH 64
 #define VKA_ERROR_MESSAGE_LENGTH 1024
 #define VKA_ERROR -1
-
-typedef char vka_name_t[VKA_MAX_NAME_LENGTH];
+#define VKA_MAX_FRAMES_IN_FLIGHT 2
 
 typedef struct
 {
-	vka_name_t application_name;
-	vka_name_t engine_name;
-	vka_name_t window_name;
+	char application_name[VKA_MAX_NAME_LENGTH];
+	char engine_name[VKA_MAX_NAME_LENGTH];
+	char window_name[VKA_MAX_NAME_LENGTH];
 
 	uint32_t application_version;
 	uint32_t engine_version;
@@ -59,7 +58,22 @@ typedef struct
 	uint32_t present_family_index;
 	VkQueue present_queue;
 
-	// Debug:
+	VkCommandPool command_pool;
+	VkCommandBuffer command_buffers[VKA_MAX_FRAMES_IN_FLIGHT];
+	VkFence command_fences[VKA_MAX_FRAMES_IN_FLIGHT];
+
+	/*
+	VkSemaphore image_available[VKA_MAX_FRAMES_IN_FLIGHT];
+	VkSemaphore render_complete[VKA_MAX_FRAMES_IN_FLIGHT];
+
+	uint32_t num_swapchain_images;
+	VkFormat swapchain_format;
+	VkExtent2D swapchain_extent;
+	VkSwapchainKHR swapchain;
+	VkImage *swapchain_images;
+	VkImageView *swapchain_image_views;
+	*/
+
 	char error_message[VKA_ERROR_MESSAGE_LENGTH];
 	#ifdef VKA_DEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
@@ -79,6 +93,9 @@ int vka_create_device(vka_vulkan_t *vulkan);
 int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_device,
 		uint32_t *graphics_family_index, uint32_t *present_family_index,
 		VkDeviceSize *max_memory_allocation_size, VkBool32 *sampler_anisotropy);
+int vka_create_command_pool(vka_vulkan_t *vulkan);
+int vka_create_command_buffers(vka_vulkan_t *vulkan);
+int vka_create_command_fences(vka_vulkan_t *vulkan);
 
 // Utility:
 void vka_device_wait_idle(vka_vulkan_t *vulkan);

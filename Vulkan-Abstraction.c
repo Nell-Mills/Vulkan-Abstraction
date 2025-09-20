@@ -50,6 +50,14 @@ vka_vulkan_t vka_vulkan_initialise()
 	vulkan.present_family_index	= 100;
 	vulkan.present_queue		= VK_NULL_HANDLE;
 
+	vulkan.command_pool		= VK_NULL_HANDLE;
+
+	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		vulkan.command_buffers[i]	= VK_NULL_HANDLE;
+		vulkan.command_fences[i]	= VK_NULL_HANDLE;
+	}
+
 	strcpy(vulkan.error_message, "");
 	#ifdef VKA_DEBUG
 	vulkan.debug_messenger		= VK_NULL_HANDLE;
@@ -90,12 +98,41 @@ int vka_vulkan_setup(vka_vulkan_t *vulkan)
 	error = vka_create_device(vulkan);
 	if (error) { return error; }
 
+	error = vka_create_command_pool(vulkan);
+	if (error) { return error; }
+
+	error = vka_create_command_buffers(vulkan);
+	if (error) { return error; }
+
+	error = vka_create_command_fences(vulkan);
+	if (error) { return error; }
+
 	return VK_SUCCESS;
 }
 
 void vka_vulkan_shutdown(vka_vulkan_t *vulkan)
 {
 	vka_device_wait_idle(vulkan);
+
+	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		if (vulkan->command_fences[i] != VK_NULL_HANDLE)
+		{
+			vkDestroyFence(vulkan->device, vulkan->command_fences[i], NULL);
+			vulkan->command_fences[i] = VK_NULL_HANDLE;
+		}
+	}
+
+	if (vulkan->command_pool != VK_NULL_HANDLE)
+	{
+		vkDestroyCommandPool(vulkan->device, vulkan->command_pool, NULL);
+		vulkan->command_pool = VK_NULL_HANDLE;
+	}
+
+	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		vulkan->command_buffers[i] = VK_NULL_HANDLE;
+	}
 
 	if (vulkan->device != VK_NULL_HANDLE)
 	{
@@ -672,6 +709,82 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	return score;
 }
 
+int vka_create_command_pool(vka_vulkan_t *vulkan)
+{
+	// TODO - is VK_COMMAND_POOL_CREATE_TRANSIENT_BIT needed?
+	int error;
+
+	VkCommandPoolCreateInfo pool_info;
+	memset(&pool_info, 0, sizeof(pool_info));
+	pool_info.sType			= VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	pool_info.pNext			= NULL;
+	pool_info.flags			= VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
+						VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	pool_info.queueFamilyIndex	= vulkan->graphics_family_index;
+
+	error = vkCreateCommandPool(vulkan->device, &pool_info, NULL, &(vulkan->command_pool));
+	if (error)
+	{
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+				"Could not create command pool.\n");
+		return error;
+	}
+
+	return VK_SUCCESS;
+}
+
+int vka_create_command_buffers(vka_vulkan_t *vulkan)
+{
+	int error;
+
+	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		VkCommandBufferAllocateInfo alloc_info;
+		memset(&alloc_info, 0, sizeof(alloc_info));
+		alloc_info.sType		= VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		alloc_info.pNext		= NULL;
+		alloc_info.commandPool		= vulkan->command_pool;
+		alloc_info.level		= VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		alloc_info.commandBufferCount	= 1;
+
+		error = vkAllocateCommandBuffers(vulkan->device, &alloc_info,
+					&(vulkan->command_buffers[i]));
+		if (error)
+		{
+			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+					"Could not allocate command buffer.\n");
+			return error;
+		}
+	}
+
+	return VK_SUCCESS;
+}
+
+int vka_create_command_fences(vka_vulkan_t *vulkan)
+{
+	int error;
+
+	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		VkFenceCreateInfo fence_info;
+		memset(&fence_info, 0, sizeof(fence_info));
+		fence_info.sType	= VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+		fence_info.pNext	= NULL;
+		fence_info.flags	= VK_FENCE_CREATE_SIGNALED_BIT;
+
+		error = vkCreateFence(vulkan->device, &fence_info, NULL,
+					&(vulkan->command_fences[i]));
+		if (error)
+		{
+			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+						"Could not create fence.\n");
+			return error;
+		}
+	}
+
+	return VK_SUCCESS;
+}
+
 /***********
  * Utility *
  ***********/
@@ -858,6 +971,14 @@ void vka_print_vulkan(vka_vulkan_t *vulkan, FILE *file)
 	fprintf(file, "* Vulkan base debug info *\n");
 	fprintf(file, "**************************\n");
 
+	if (vulkan->config.enabled_features.samplerAnisotropy == VK_TRUE)
+	{
+		fprintf(file, "Sampler anisotropy\t\t\tEnabled\n");
+	}
+	else { fprintf(file, "Sampler anisotropy\t\t\tNot enabled\n"); }
+
+	fprintf(file, "\n");
+
 	if (vulkan->instance == VK_NULL_HANDLE)
 	{
 		fprintf(file, "Instance\t\t\t\t= VK_NULL_HANDLE\n");
@@ -896,12 +1017,54 @@ void vka_print_vulkan(vka_vulkan_t *vulkan, FILE *file)
 
 	fprintf(file, "\n");
 
+	if (vulkan->graphics_queue == VK_NULL_HANDLE)
+	{
+		fprintf(file, "Queue: graphics\t\t\t\t= VK_NULL_HANDLE\n");
+	}
+	else { fprintf(file, "Queue: graphics\t\t\t\t= %p\n", vulkan->graphics_queue); }
+
+	if (vulkan->present_queue == VK_NULL_HANDLE)
+	{
+		fprintf(file, "Queue: present\t\t\t\t= VK_NULL_HANDLE\n");
+	}
+	else { fprintf(file, "Queue: present\t\t\t\t= %p\n", vulkan->present_queue); }
+
+	fprintf(file, "\n");
+
+	if (vulkan->command_pool == VK_NULL_HANDLE)
+	{
+		fprintf(file, "Command pool\t\t\t\t= VK_NULL_HANDLE\n");
+	}
+	else { fprintf(file, "Command pool\t\t\t\t= %p\n", vulkan->command_pool); }
+
+	fprintf(file, "Command buffers:\n");
+	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		fprintf(file, " ---> Command buffer %d\t\t\t= ", i);
+		if (vulkan->command_buffers[i] == VK_NULL_HANDLE)
+		{
+			fprintf(file, "VK_NULL_HANDLE\n");
+		}
+		else { fprintf(file, "%p\n", vulkan->command_buffers[i]); }
+	}
+
+	fprintf(file, "Command fences:\n");
+	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		fprintf(file, " ---> Command fence %d\t\t\t= ", i);
+		if (vulkan->command_fences[i] == VK_NULL_HANDLE)
+		{
+			fprintf(file, "VK_NULL_HANDLE\n");
+		}
+		else { fprintf(file, "%p\n", vulkan->command_fences[i]); }
+	}
+
+	fprintf(file, "\n");
+
 	if (vulkan->debug_messenger == VK_NULL_HANDLE)
 	{
 		fprintf(file, "Debug messenger\t\t\t\t= VK_NULL_HANDLE\n");
 	}
 	else { fprintf(file, "Debug messenger\t\t\t\t= %p\n", vulkan->debug_messenger); }
-
-
 }
 #endif
