@@ -37,9 +37,6 @@ vka_vulkan_t vka_vulkan_initialise()
 
 	// Main data:
 	vulkan.window			= NULL;
-	vulkan.screen_width		= 1080;
-	vulkan.screen_height		= 720;
-
 	vulkan.instance			= VK_NULL_HANDLE;
 	vulkan.surface			= VK_NULL_HANDLE;
 
@@ -56,7 +53,18 @@ vka_vulkan_t vka_vulkan_initialise()
 	{
 		vulkan.command_buffers[i]	= VK_NULL_HANDLE;
 		vulkan.command_fences[i]	= VK_NULL_HANDLE;
+
+		vulkan.image_available[i]	= VK_NULL_HANDLE;
+		vulkan.render_complete[i]	= VK_NULL_HANDLE;
 	}
+
+	vulkan.num_swapchain_images		= 0;
+	vulkan.swapchain_format			= VK_FORMAT_UNDEFINED;
+	vulkan.swapchain_extent.width		= 0;
+	vulkan.swapchain_extent.height		= 0;
+	vulkan.swapchain			= VK_NULL_HANDLE;
+	vulkan.swapchain_images			= NULL;
+	vulkan.swapchain_image_views		= NULL;
 
 	strcpy(vulkan.error_message, "");
 	#ifdef VKA_DEBUG
@@ -107,12 +115,59 @@ int vka_vulkan_setup(vka_vulkan_t *vulkan)
 	error = vka_create_command_fences(vulkan);
 	if (error) { return error; }
 
+	error = vka_create_semaphores(vulkan);
+	if (error) { return error; }
+
+	error = vka_create_swapchain(vulkan, NULL);
+	if (error) { return error; }
+
 	return VK_SUCCESS;
 }
 
 void vka_vulkan_shutdown(vka_vulkan_t *vulkan)
 {
 	vka_device_wait_idle(vulkan);
+
+	if (vulkan->swapchain_image_views != NULL)
+	{
+		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
+		{
+			if (vulkan->swapchain_image_views[i] != VK_NULL_HANDLE)
+			{
+				vkDestroyImageView(vulkan->device,
+					vulkan->swapchain_image_views[i], NULL);
+				vulkan->swapchain_image_views[i] = VK_NULL_HANDLE;
+			}
+		}
+		free(vulkan->swapchain_image_views);
+		vulkan->swapchain_image_views = NULL;
+	}
+
+	if (vulkan->swapchain_images != NULL)
+	{
+		free(vulkan->swapchain_images);
+		vulkan->swapchain_images = NULL;
+	}
+
+	if (vulkan->swapchain != VK_NULL_HANDLE)
+	{
+		vkDestroySwapchainKHR(vulkan->device, vulkan->swapchain, NULL);
+		vulkan->swapchain = VK_NULL_HANDLE;
+	}
+
+	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		if (vulkan->image_available[i] != VK_NULL_HANDLE)
+		{
+			vkDestroySemaphore(vulkan->device, vulkan->image_available[i], NULL);
+			vulkan->image_available[i] = VK_NULL_HANDLE;
+		}
+		if (vulkan->render_complete[i] != VK_NULL_HANDLE)
+		{
+			vkDestroySemaphore(vulkan->device, vulkan->render_complete[i], NULL);
+			vulkan->render_complete[i] = VK_NULL_HANDLE;
+		}
+	}
 
 	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
@@ -178,8 +233,9 @@ int vka_create_window(vka_vulkan_t *vulkan)
 		return VKA_ERROR;
 	}
 
-	vulkan->window = SDL_CreateWindow(vulkan->config.window_name, vulkan->screen_width,
-			vulkan->screen_height, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+	vulkan->window = SDL_CreateWindow(vulkan->config.window_name,
+		vulkan->config.minimum_screen_width, vulkan->config.minimum_screen_height,
+		SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 	if (vulkan->window == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
@@ -785,6 +841,353 @@ int vka_create_command_fences(vka_vulkan_t *vulkan)
 	return VK_SUCCESS;
 }
 
+int vka_create_semaphores(vka_vulkan_t *vulkan)
+{
+	int error;
+
+	VkSemaphoreCreateInfo semaphore_info;
+	memset(&semaphore_info, 0, sizeof(semaphore_info));
+	semaphore_info.sType	= VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	semaphore_info.pNext	= NULL;
+	semaphore_info.flags	= 0;
+
+	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		error = vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
+						&(vulkan->image_available[i]));
+		if (error)
+		{
+			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+				"Could not create semaphore: \"Image available\".\n");
+			return error;
+		}
+
+		error = vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
+						&(vulkan->render_complete[i]));
+		if (error)
+		{
+			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+				"Could not create semaphore: \"Render complete\".\n");
+			return error;
+		}
+	}
+
+	return VK_SUCCESS;
+}
+
+int vka_create_swapchain(vka_vulkan_t *vulkan, int *recreate_pipelines)
+{
+	// Used for initial creation AND recreation of swapchain.
+	int error;
+
+	vka_device_wait_idle(vulkan);
+
+	if (vulkan->swapchain_image_views != NULL)
+	{
+		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
+		{
+			if (vulkan->swapchain_image_views[i] != VK_NULL_HANDLE)
+			{
+				vkDestroyImageView(vulkan->device,
+					vulkan->swapchain_image_views[i], NULL);
+				vulkan->swapchain_image_views[i] = VK_NULL_HANDLE;
+			}
+		}
+		free(vulkan->swapchain_image_views);
+		vulkan->swapchain_image_views = NULL;
+	}
+
+	if (vulkan->swapchain_images != NULL)
+	{
+		free(vulkan->swapchain_images);
+		vulkan->swapchain_images = NULL;
+	}
+
+	VkFormat old_format = vulkan->swapchain_format;
+	VkSwapchainKHR old_swapchain = vulkan->swapchain;
+
+	uint32_t num_formats;
+	error = vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physical_device, vulkan->surface,
+									&num_formats, NULL);
+	if (error)
+	{
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+			"Could not enumerate surface formats.\n");
+		return error;
+	}
+
+	VkSurfaceFormatKHR *formats = malloc(num_formats * sizeof(VkSurfaceFormatKHR));
+	if (formats == NULL)
+	{
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+			"Could not allocate memory for array of surface formats.\n");
+		return VKA_ERROR;
+	}
+
+	error = vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physical_device, vulkan->surface,
+								&num_formats, formats);
+	if (error)
+	{
+		free(formats);
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+			"Could not get array of surface formats.\n");
+		return error;
+	}
+
+	if (num_formats < 1)
+	{
+		free(formats);
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+				"No surface formats to choose from.\n");
+		return VKA_ERROR;
+	}
+
+	VkSurfaceFormatKHR chosen_format = formats[0];
+	for (uint32_t i = 0; i < num_formats; i++)
+	{
+		if ((formats[i].format == VK_FORMAT_R8G8B8A8_SRGB) &&
+			(formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR))
+		{
+			chosen_format = formats[i];
+			break;
+		}
+
+		if ((formats[i].format == VK_FORMAT_B8G8R8A8_SRGB) &&
+			(formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR))
+		{
+			chosen_format = formats[i];
+		}
+	}
+
+	vulkan->swapchain_format = chosen_format.format;
+	free(formats);
+
+	uint32_t num_modes;
+	error = vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->physical_device, vulkan->surface,
+										&num_modes, NULL);
+	if (error)
+	{
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+			"Could not enumerate surface present modes.\n");
+		return error;
+	}
+
+	VkPresentModeKHR *modes = malloc(num_modes * sizeof(VkPresentModeKHR));
+	if (modes == NULL)
+	{
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+			"Could not allocate memory for array of surface present modes.\n");
+		return VKA_ERROR;
+	}
+
+	error = vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->physical_device, vulkan->surface,
+										&num_modes, modes);
+	if (error)
+	{
+		free(modes);
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+			"Could not get array of surface present modes.\n");
+		return error;
+	}
+
+	if (num_modes < 1)
+	{
+		free(modes);
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+			"No surface present modes to choose from.\n");
+		return VKA_ERROR;
+	}
+
+	VkPresentModeKHR chosen_mode = VK_PRESENT_MODE_FIFO_KHR;
+	for (uint32_t i = 0; i < num_modes; i++)
+	{
+		if (modes[i] == VK_PRESENT_MODE_FIFO_RELAXED_KHR)
+		{
+			chosen_mode = modes[i];
+			break;
+		}
+	}
+
+	free(modes);
+
+	VkSurfaceCapabilitiesKHR capabilities;
+	error = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vulkan->physical_device, vulkan->surface,
+										&capabilities);
+	if (error)
+	{
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+			"Could not get surface capabilities for the device.\n");
+		return error;
+	}
+
+	uint32_t num_images = 2;
+	if (num_images < (capabilities.minImageCount + 1))
+	{
+		num_images = capabilities.minImageCount + 1;
+	}
+	if ((num_images > capabilities.maxImageCount) && (capabilities.maxImageCount > 0))
+	{
+		num_images = capabilities.maxImageCount;
+	}
+
+	vulkan->swapchain_extent = capabilities.currentExtent;
+	if (vulkan->swapchain_extent.width == UINT32_MAX)
+	{
+		int width;
+		int height;
+		SDL_GetWindowSizeInPixels(vulkan->window, &width, &height);
+		vulkan->swapchain_extent.width = width;
+		vulkan->swapchain_extent.height = height;
+
+		if (vulkan->swapchain_extent.width < capabilities.minImageExtent.width)
+		{
+			vulkan->swapchain_extent.width = capabilities.minImageExtent.width;
+		}
+		if (vulkan->swapchain_extent.width > capabilities.maxImageExtent.width)
+		{
+			vulkan->swapchain_extent.width = capabilities.maxImageExtent.width;
+		}
+		if (vulkan->swapchain_extent.height < capabilities.minImageExtent.height)
+		{
+			vulkan->swapchain_extent.height = capabilities.minImageExtent.height;
+		}
+		if (vulkan->swapchain_extent.height > capabilities.maxImageExtent.height)
+		{
+			vulkan->swapchain_extent.height = capabilities.maxImageExtent.height;
+		}
+	}
+
+	VkSwapchainCreateInfoKHR swapchain_info;
+	memset(&swapchain_info, 0, sizeof(swapchain_info));
+	swapchain_info.sType		= VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+	swapchain_info.pNext		= NULL;
+	swapchain_info.flags		= 0;
+	swapchain_info.surface		= vulkan->surface;
+	swapchain_info.minImageCount	= num_images;
+	swapchain_info.imageFormat	= chosen_format.format;
+	swapchain_info.imageColorSpace	= chosen_format.colorSpace;
+	swapchain_info.imageExtent	= vulkan->swapchain_extent;
+	swapchain_info.imageArrayLayers	= 1;
+	swapchain_info.imageUsage	= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	swapchain_info.preTransform	= capabilities.currentTransform;
+	swapchain_info.compositeAlpha	= VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	swapchain_info.presentMode	= chosen_mode;
+	swapchain_info.clipped		= VK_TRUE;
+	swapchain_info.oldSwapchain	= old_swapchain;
+
+	const uint32_t queue_family_indices[] = { vulkan->graphics_family_index,
+						vulkan->present_family_index };
+	if (vulkan->graphics_family_index == vulkan->present_family_index)
+	{
+		swapchain_info.imageSharingMode		= VK_SHARING_MODE_EXCLUSIVE;
+		swapchain_info.queueFamilyIndexCount	= 0;
+		swapchain_info.pQueueFamilyIndices	= NULL;
+	}
+	else
+	{
+		swapchain_info.imageSharingMode		= VK_SHARING_MODE_CONCURRENT;
+		swapchain_info.queueFamilyIndexCount	= 2;
+		swapchain_info.pQueueFamilyIndices	= queue_family_indices;
+	}
+
+	error = vkCreateSwapchainKHR(vulkan->device, &swapchain_info, NULL, &(vulkan->swapchain));
+	if (error)
+	{
+		vulkan->swapchain = old_swapchain;
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+					"Could not create swapchain.\n");
+		return error;
+	}
+
+	if (old_swapchain != VK_NULL_HANDLE)
+	{
+		vkDestroySwapchainKHR(vulkan->device, old_swapchain, NULL);
+	}
+
+	/* Calls to free() for swapchain images and image views are
+	 * in vka_vulkan_shutdown() and the start of this function. */
+
+	error = vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain,
+				&(vulkan->num_swapchain_images), NULL);
+	if (error)
+	{
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+			"Could not get number of swapchain images.\n");
+		return error;
+	}
+
+	vulkan->swapchain_images = malloc(vulkan->num_swapchain_images * sizeof(VkImage));
+	if (vulkan->swapchain_images == NULL)
+	{
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+			"Could not allocate memory for swapchain images.\n");
+		return VKA_ERROR;
+	}
+	for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
+	{
+		vulkan->swapchain_images[i] = VK_NULL_HANDLE;
+	}
+
+	error = vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain,
+		&(vulkan->num_swapchain_images), vulkan->swapchain_images);
+	if (error)
+	{
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+				"Could not get swapchain images.\n");
+		return error;
+	}
+
+	vulkan->swapchain_image_views = malloc(vulkan->num_swapchain_images * sizeof(VkImageView));
+	if (vulkan->swapchain_image_views == NULL)
+	{
+		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+			"Could not allocate memory for swapchain image views.\n");
+		return VKA_ERROR;
+	}
+	for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
+	{
+		vulkan->swapchain_image_views[i] = VK_NULL_HANDLE;
+	}
+
+	for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
+	{
+		VkImageViewCreateInfo view_info;
+		memset(&view_info, 0, sizeof(view_info));
+		view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		view_info.pNext					= NULL;
+		view_info.flags					= 0;
+		view_info.image					= vulkan->swapchain_images[i];
+		view_info.viewType				= VK_IMAGE_VIEW_TYPE_2D;
+		view_info.format				= vulkan->swapchain_format;
+		view_info.components.r				= VK_COMPONENT_SWIZZLE_IDENTITY;
+		view_info.components.g				= VK_COMPONENT_SWIZZLE_IDENTITY;
+		view_info.components.b				= VK_COMPONENT_SWIZZLE_IDENTITY;
+		view_info.components.a				= VK_COMPONENT_SWIZZLE_IDENTITY;
+		view_info.subresourceRange.aspectMask		= VK_IMAGE_ASPECT_COLOR_BIT;
+		view_info.subresourceRange.baseMipLevel		= 0;
+		view_info.subresourceRange.levelCount		= 1;
+		view_info.subresourceRange.baseArrayLayer	= 0;
+		view_info.subresourceRange.layerCount		= 1;
+
+		error = vkCreateImageView(vulkan->device, &view_info, NULL,
+				&(vulkan->swapchain_image_views[i]));
+		if (error)
+		{
+			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+				"Could not create swapchain image view.\n");
+			return error;
+		}
+	}
+
+	if (recreate_pipelines != NULL)
+	{
+		if (old_format != vulkan->swapchain_format) { *recreate_pipelines = 1; }
+		else { *recreate_pipelines = 0; }
+	}
+
+	return VK_SUCCESS;
+}
+
 /***********
  * Utility *
  ***********/
@@ -1057,6 +1460,82 @@ void vka_print_vulkan(vka_vulkan_t *vulkan, FILE *file)
 			fprintf(file, "VK_NULL_HANDLE\n");
 		}
 		else { fprintf(file, "%p\n", vulkan->command_fences[i]); }
+	}
+
+	fprintf(file, "\n");
+
+	fprintf(file, "Semaphores:\n");
+
+	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		fprintf(file, " ---> \"Image available\" %d\t\t", i);
+		if (vulkan->image_available[i] == VK_NULL_HANDLE)
+		{
+			fprintf(file, "= VK_NULL_HANDLE\n");
+		}
+		else { fprintf(file, "= %p\n", vulkan->image_available[i]); }
+	}
+
+	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		fprintf(file, " ---> \"Render complete\" %d\t\t", i);
+		if (vulkan->render_complete[i] == VK_NULL_HANDLE)
+		{
+			fprintf(file, "= VK_NULL_HANDLE\n");
+		}
+		else { fprintf(file, "= %p\n", vulkan->render_complete[i]); }
+	}
+
+	fprintf(file, "\n");
+
+	fprintf(file, "Swapchain: number of images\t\t= %d\n", vulkan->num_swapchain_images);
+
+	if (vulkan->swapchain == VK_NULL_HANDLE)
+	{
+		fprintf(file, "Swapchain\t\t\t\t= VK_NULL_HANDLE\n");
+	}
+	else { fprintf(file, "Swapchain\t\t\t\t= %p\n", vulkan->swapchain); }
+
+	if (vulkan->swapchain_images == NULL)
+	{
+		fprintf(file, "Swapchain images\t\t\t= NULL\n");
+	}
+	else
+	{
+		fprintf(file, "Swapchain images\t\t\t= %p\n", vulkan->swapchain_images);
+		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
+		{
+			fprintf(file, " ---> Swapchain image %d\t\t\t= ", i);
+			if (vulkan->swapchain_images[i] == VK_NULL_HANDLE)
+			{
+				fprintf(file, "VK_NULL_HANDLE\n");
+			}
+			else
+			{
+				fprintf(file, "%p\n", vulkan->swapchain_images[i]);
+			}
+		}
+	}
+
+	if (vulkan->swapchain_image_views == NULL)
+	{
+		fprintf(file, "Swapchain image views\t\t\t= NULL\n");
+	}
+	else
+	{
+		fprintf(file, "Swapchain image views\t\t\t= %p\n", vulkan->swapchain_image_views);
+		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
+		{
+			fprintf(file, " ---> Swapchain image view %d\t\t= ", i);
+			if (vulkan->swapchain_image_views[i] == VK_NULL_HANDLE)
+			{
+				fprintf(file, "VK_NULL_HANDLE\n");
+			}
+			else
+			{
+				fprintf(file, "%p\n", vulkan->swapchain_image_views[i]);
+			}
+		}
 	}
 
 	fprintf(file, "\n");

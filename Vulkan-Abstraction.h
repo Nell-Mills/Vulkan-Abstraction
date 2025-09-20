@@ -45,9 +45,6 @@ typedef struct
 	vka_vulkan_config_t config;
 
 	SDL_Window *window;
-	int screen_width;
-	int screen_height;
-
 	VkInstance instance;
 	VkSurfaceKHR surface;
 
@@ -62,7 +59,6 @@ typedef struct
 	VkCommandBuffer command_buffers[VKA_MAX_FRAMES_IN_FLIGHT];
 	VkFence command_fences[VKA_MAX_FRAMES_IN_FLIGHT];
 
-	/*
 	VkSemaphore image_available[VKA_MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore render_complete[VKA_MAX_FRAMES_IN_FLIGHT];
 
@@ -72,7 +68,6 @@ typedef struct
 	VkSwapchainKHR swapchain;
 	VkImage *swapchain_images;
 	VkImageView *swapchain_image_views;
-	*/
 
 	char error_message[VKA_ERROR_MESSAGE_LENGTH];
 	#ifdef VKA_DEBUG
@@ -96,6 +91,8 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 int vka_create_command_pool(vka_vulkan_t *vulkan);
 int vka_create_command_buffers(vka_vulkan_t *vulkan);
 int vka_create_command_fences(vka_vulkan_t *vulkan);
+int vka_create_semaphores(vka_vulkan_t *vulkan);
+int vka_create_swapchain(vka_vulkan_t *vulkan, int *recreate_pipelines);
 
 // Utility:
 void vka_device_wait_idle(vka_vulkan_t *vulkan);
