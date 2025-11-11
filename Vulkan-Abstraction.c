@@ -58,13 +58,18 @@ vka_vulkan_t vka_vulkan_initialise()
 		vulkan.render_complete[i]	= VK_NULL_HANDLE;
 	}
 
-	vulkan.num_swapchain_images		= 0;
-	vulkan.swapchain_format			= VK_FORMAT_UNDEFINED;
-	vulkan.swapchain_extent.width		= 0;
-	vulkan.swapchain_extent.height		= 0;
-	vulkan.swapchain			= VK_NULL_HANDLE;
-	vulkan.swapchain_images			= NULL;
-	vulkan.swapchain_image_views		= NULL;
+	vulkan.num_swapchain_images	= 0;
+	vulkan.swapchain_format		= VK_FORMAT_UNDEFINED;
+	vulkan.swapchain_extent.width	= 0;
+	vulkan.swapchain_extent.height	= 0;
+	vulkan.swapchain		= VK_NULL_HANDLE;
+	vulkan.swapchain_images		= NULL;
+	vulkan.swapchain_image_views	= NULL;
+
+	vulkan.recreate_swapchain	= 0;
+	vulkan.recreate_pipelines	= 0;
+	vulkan.current_frame		= 0;
+	vulkan.current_swapchain_index	= 0;
 
 	strcpy(vulkan.error_message, "");
 	#ifdef VKA_DEBUG
@@ -76,52 +81,32 @@ vka_vulkan_t vka_vulkan_initialise()
 
 int vka_vulkan_setup(vka_vulkan_t *vulkan)
 {
-	int error;
-
 	vulkan->config.enabled_features_12.pNext = &(vulkan->config.enabled_features_11);
 	vulkan->config.enabled_features_13.pNext = &(vulkan->config.enabled_features_12);
 
-	error = vka_create_window(vulkan);
-	if (error) { return error; }
-
-	error = volkInitialize();
-	if (error) { return error; }
+	if (vka_create_window(vulkan)) { return -1; }
+	if (volkInitialize()) { return -1; }
 
 	#ifdef VKA_DEBUG
-	error = vka_check_instance_layer_extension_support(vulkan);
-	if (error) { return error; }
+	if (vka_check_instance_layer_extension_support(vulkan)) { return -1; }
 	#endif
 
-	error = vka_create_instance(vulkan);
-	if (error) { return error; }
-
-	error = vka_create_surface(vulkan);
-	if (error) { return error; }
+	if (vka_create_instance(vulkan)) { return -1; }
+	if (vka_create_surface(vulkan)) { return -1; }
 
 	#ifdef VKA_DEBUG
-	error = vka_create_debug_messenger(vulkan);
-	if (error) { return error; }
+	if (vka_create_debug_messenger(vulkan)) { return -1; }
 	#endif
 
-	error = vka_create_device(vulkan);
-	if (error) { return error; }
+	if (vka_create_device(vulkan)) { return -1; }
+	if (vka_create_command_pool(vulkan)) { return -1; }
+	if (vka_create_command_buffers(vulkan)) { return -1; }
+	if (vka_create_command_fences(vulkan)) { return -1; }
+	if (vka_create_semaphores(vulkan)) { return -1; }
+	if (vka_create_swapchain(vulkan)) { return -1; }
+	vulkan->recreate_pipelines = 0;
 
-	error = vka_create_command_pool(vulkan);
-	if (error) { return error; }
-
-	error = vka_create_command_buffers(vulkan);
-	if (error) { return error; }
-
-	error = vka_create_command_fences(vulkan);
-	if (error) { return error; }
-
-	error = vka_create_semaphores(vulkan);
-	if (error) { return error; }
-
-	error = vka_create_swapchain(vulkan, NULL);
-	if (error) { return error; }
-
-	return VK_SUCCESS;
+	return 0;
 }
 
 void vka_vulkan_shutdown(vka_vulkan_t *vulkan)
@@ -229,8 +214,8 @@ int vka_create_window(vka_vulkan_t *vulkan)
 	if (SDL_Init(SDL_INIT_VIDEO) != true)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not initialise SDL -> %s.\n", SDL_GetError());
-		return VKA_ERROR;
+			"Could not initialise SDL -> %s.", SDL_GetError());
+		return -1;
 	}
 
 	vulkan->window = SDL_CreateWindow(vulkan->config.window_name,
@@ -239,32 +224,30 @@ int vka_create_window(vka_vulkan_t *vulkan)
 	if (vulkan->window == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not create window -> %s.\n", SDL_GetError());
-		return VKA_ERROR;
+			"Could not create window -> %s.", SDL_GetError());
+		return -1;
 	}
 
 	if (SDL_SetWindowFullscreenMode(vulkan->window, NULL) != true)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not set window fullscreen mode -> %s.\n", SDL_GetError());
-		return VKA_ERROR;
+			"Could not set window fullscreen mode -> %s.", SDL_GetError());
+		return -1;
 	}
 
 	if (SDL_SetWindowMinimumSize(vulkan->window, vulkan->config.minimum_screen_width,
 					vulkan->config.minimum_screen_height) != true)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not set window minimum size -> %s.\n", SDL_GetError());
-		return VKA_ERROR;
+			"Could not set window minimum size -> %s.", SDL_GetError());
+		return -1;
 	}
 
-	return VK_SUCCESS;
+	return 0;
 }
 
 int vka_create_instance(vka_vulkan_t *vulkan)
 {
-	int error;
-
 	VkApplicationInfo application_info;
 	memset(&application_info, 0, sizeof(application_info));
 	application_info.sType			= VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -293,8 +276,8 @@ int vka_create_instance(vka_vulkan_t *vulkan)
 	if (extensions == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for extension names.\n");
-		return VKA_ERROR;
+			"Could not allocate memory for extension names.");
+		return -1;
 	}
 	for (uint32_t i = 0; i < extension_count; i++)
 	{
@@ -304,8 +287,8 @@ int vka_create_instance(vka_vulkan_t *vulkan)
 			for (uint32_t j = 0; j < i; j++) { free(extensions[j]); }
 			free(extensions);
 			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"Could not allocate memory for extension names.\n");
-			return VKA_ERROR;
+				"Could not allocate memory for extension names.");
+			return -1;
 		}
 	}
 
@@ -328,15 +311,14 @@ int vka_create_instance(vka_vulkan_t *vulkan)
 	instance_create_info.enabledExtensionCount	= extension_count;
 	instance_create_info.ppEnabledExtensionNames	= (const char **)extensions;
 
-	error = vkCreateInstance(&instance_create_info, NULL, &(vulkan->instance));
-	if (error || (vulkan->instance == VK_NULL_HANDLE))
+	if (vkCreateInstance(&instance_create_info, NULL, &(vulkan->instance)) != VK_SUCCESS)
 	{
 		for (uint32_t i = 0; i < extension_count; i++) { free(extensions[i]); }
 		free(extensions);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not create Vulkan instance.\n");
+				"Could not create Vulkan instance.");
 		vulkan->instance = VK_NULL_HANDLE;
-		return error;
+		return -1;
 	}
 
 	for (uint32_t i = 0; i < extension_count; i++) { free(extensions[i]); }
@@ -344,7 +326,7 @@ int vka_create_instance(vka_vulkan_t *vulkan)
 
 	volkLoadInstanceOnly(vulkan->instance);
 
-	return VK_SUCCESS;
+	return 0;
 }
 
 int vka_create_surface(vka_vulkan_t *vulkan)
@@ -353,24 +335,21 @@ int vka_create_surface(vka_vulkan_t *vulkan)
 				NULL, &(vulkan->surface)) != true)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not create surface -> %s.\n", SDL_GetError());
-		return VKA_ERROR;
+			"Could not create surface -> %s.", SDL_GetError());
+		return -1;
 	}
 
-	return VK_SUCCESS;
+	return 0;
 }
 
 int vka_create_device(vka_vulkan_t *vulkan)
 {
-	int error;
-
 	uint32_t num_physical_devices;
-	error = vkEnumeratePhysicalDevices(vulkan->instance, &num_physical_devices, NULL);
-	if (error)
+	if (vkEnumeratePhysicalDevices(vulkan->instance, &num_physical_devices, NULL) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not enumerate physical devices.\n");
-		return error;
+			"Could not enumerate physical devices.");
+		return -1;
 	}
 
 	VkPhysicalDevice *physical_devices = malloc(num_physical_devices *
@@ -378,18 +357,17 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	if (physical_devices == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for physical device array.\n");
-		return VKA_ERROR;
+			"Could not allocate memory for physical device array.");
+		return -1;
 	}
 
-	error = vkEnumeratePhysicalDevices(vulkan->instance, &num_physical_devices,
-								physical_devices);
-	if (error)
+	if (vkEnumeratePhysicalDevices(vulkan->instance, &num_physical_devices,
+					physical_devices) != VK_SUCCESS)
 	{
 		free(physical_devices);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not get array of physical devices.\n");
-		return error;
+			"Could not get array of physical devices.");
+		return -1;
 	}
 
 	int best_score = -1;
@@ -419,8 +397,8 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	if (best_score < 0)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"No suitable physical device found.\n");
-		return VKA_ERROR;
+				"No suitable physical device found.");
+		return -1;
 	}
 
 	uint32_t num_queue_families;
@@ -435,8 +413,8 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	if (queue_info == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for device queue info.\n");
-		return VKA_ERROR;
+			"Could not allocate memory for device queue info.");
+		return -1;
 	}
 	memset(queue_info, 0, num_queue_families * sizeof(VkDeviceQueueCreateInfo));
 	float queue_priorities[1] = { 1.f };
@@ -481,13 +459,13 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	device_info.ppEnabledExtensionNames	= (const char **)enabled_extensions;
 	device_info.pEnabledFeatures		= NULL;
 
-	error = vkCreateDevice(vulkan->physical_device, &device_info, NULL, &(vulkan->device));
-	if (error)
+	if (vkCreateDevice(vulkan->physical_device, &device_info, NULL,
+				&(vulkan->device)) != VK_SUCCESS)
 	{
 		free(queue_info);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-					"Could not create device.\n");
-		return error;
+					"Could not create device.");
+		return -1;
 	}
 
 	free(queue_info);
@@ -499,8 +477,8 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	if (vulkan->graphics_queue == VK_NULL_HANDLE)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"Could not retrieve graphics queue.\n");
-		return VKA_ERROR;
+				"Could not retrieve graphics queue.");
+		return -1;
 	}
 
 	vkGetDeviceQueue(vulkan->device, vulkan->present_family_index, 0,
@@ -508,18 +486,17 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	if (vulkan->present_queue == VK_NULL_HANDLE)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"Could not retrieve present queue.\n");
-		return VKA_ERROR;
+				"Could not retrieve present queue.");
+		return -1;
 	}
 
-	return VK_SUCCESS;
+	return 0;
 }
 
 int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_device,
-		uint32_t *graphics_family_index, uint32_t *present_family_index,
-		VkDeviceSize *max_memory_allocation_size, VkBool32 *sampler_anisotropy)
+	uint32_t *graphics_family_index, uint32_t *present_family_index,
+	VkDeviceSize *max_memory_allocation_size, VkBool32 *sampler_anisotropy)
 {
-	int error;
 	int score = 0;
 
 	VkPhysicalDeviceMaintenance3Properties maintenance_properties;
@@ -533,6 +510,8 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	get_properties.pNext = &maintenance_properties;
 
 	vkGetPhysicalDeviceProperties2(physical_device, &get_properties);
+
+	*max_memory_allocation_size = maintenance_properties.maxMemoryAllocationSize;
 
 	uint32_t version_major = VK_API_VERSION_MAJOR(get_properties.properties.apiVersion);
 	uint32_t version_minor = VK_API_VERSION_MINOR(get_properties.properties.apiVersion);
@@ -550,12 +529,11 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	}
 
 	uint32_t num_supported_extensions;
-	error = vkEnumerateDeviceExtensionProperties(physical_device, NULL,
-					&num_supported_extensions, NULL);
-	if (error)
+	if (vkEnumerateDeviceExtensionProperties(physical_device, NULL,
+			&num_supported_extensions, NULL) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not enumerate extensions for physical device: %s.\n",
+			"Could not enumerate extensions for physical device: %s.",
 			get_properties.properties.deviceName);
 		return -1;
 	}
@@ -565,18 +543,17 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	if (supported_extensions == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for extensions for physical device: %s.\n",
+			"Could not allocate memory for extensions for physical device: %s.",
 			get_properties.properties.deviceName);
 		return -1;
 	}
 
-	error = vkEnumerateDeviceExtensionProperties(physical_device, NULL,
-			&num_supported_extensions, supported_extensions);
-	if (error)
+	if (vkEnumerateDeviceExtensionProperties(physical_device, NULL,
+		&num_supported_extensions, supported_extensions) != VK_SUCCESS)
 	{
 		free(supported_extensions);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not get array of supported extensions for physical device: %s.\n",
+			"Could not get array of supported extensions for physical device: %s.",
 			get_properties.properties.deviceName);
 		return -1;
 	}
@@ -660,7 +637,7 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	if (desired_features_array == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for feature comparison for device: %s.\n",
+			"Could not allocate memory for feature comparison for device: %s.",
 			get_properties.properties.deviceName);
 		return -1;
 	}
@@ -670,7 +647,7 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	{
 		free(desired_features_array);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for feature comparison for device: %s.\n",
+			"Could not allocate memory for feature comparison for device: %s.",
 			get_properties.properties.deviceName);
 		return -1;
 	}
@@ -710,7 +687,7 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	if (queue_families == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for queue families for device: %s.\n",
+			"Could not allocate memory for queue families for device: %s.",
 			get_properties.properties.deviceName);
 		return -1;
 	}
@@ -768,8 +745,6 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 int vka_create_command_pool(vka_vulkan_t *vulkan)
 {
 	// TODO - is VK_COMMAND_POOL_CREATE_TRANSIENT_BIT needed?
-	int error;
-
 	VkCommandPoolCreateInfo pool_info;
 	memset(&pool_info, 0, sizeof(pool_info));
 	pool_info.sType			= VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -778,21 +753,19 @@ int vka_create_command_pool(vka_vulkan_t *vulkan)
 						VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 	pool_info.queueFamilyIndex	= vulkan->graphics_family_index;
 
-	error = vkCreateCommandPool(vulkan->device, &pool_info, NULL, &(vulkan->command_pool));
-	if (error)
+	if (vkCreateCommandPool(vulkan->device, &pool_info, NULL,
+			&(vulkan->command_pool)) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"Could not create command pool.\n");
-		return error;
+				"Could not create command pool.");
+		return -1;
 	}
 
-	return VK_SUCCESS;
+	return 0;
 }
 
 int vka_create_command_buffers(vka_vulkan_t *vulkan)
 {
-	int error;
-
 	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		VkCommandBufferAllocateInfo alloc_info;
@@ -803,23 +776,20 @@ int vka_create_command_buffers(vka_vulkan_t *vulkan)
 		alloc_info.level		= VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 		alloc_info.commandBufferCount	= 1;
 
-		error = vkAllocateCommandBuffers(vulkan->device, &alloc_info,
-					&(vulkan->command_buffers[i]));
-		if (error)
+		if (vkAllocateCommandBuffers(vulkan->device, &alloc_info,
+			&(vulkan->command_buffers[i])) != VK_SUCCESS)
 		{
 			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-					"Could not allocate command buffer.\n");
-			return error;
+					"Could not allocate command buffer.");
+			return -1;
 		}
 	}
 
-	return VK_SUCCESS;
+	return 0;
 }
 
 int vka_create_command_fences(vka_vulkan_t *vulkan)
 {
-	int error;
-
 	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		VkFenceCreateInfo fence_info;
@@ -828,23 +798,20 @@ int vka_create_command_fences(vka_vulkan_t *vulkan)
 		fence_info.pNext	= NULL;
 		fence_info.flags	= VK_FENCE_CREATE_SIGNALED_BIT;
 
-		error = vkCreateFence(vulkan->device, &fence_info, NULL,
-					&(vulkan->command_fences[i]));
-		if (error)
+		if (vkCreateFence(vulkan->device, &fence_info, NULL,
+			&(vulkan->command_fences[i])) != VK_SUCCESS)
 		{
 			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-						"Could not create fence.\n");
-			return error;
+						"Could not create fence.");
+			return -1;
 		}
 	}
 
-	return VK_SUCCESS;
+	return 0;
 }
 
 int vka_create_semaphores(vka_vulkan_t *vulkan)
 {
-	int error;
-
 	VkSemaphoreCreateInfo semaphore_info;
 	memset(&semaphore_info, 0, sizeof(semaphore_info));
 	semaphore_info.sType	= VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -853,33 +820,29 @@ int vka_create_semaphores(vka_vulkan_t *vulkan)
 
 	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		error = vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
-						&(vulkan->image_available[i]));
-		if (error)
+		if (vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
+			&(vulkan->image_available[i])) != VK_SUCCESS)
 		{
 			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"Could not create semaphore: \"Image available\".\n");
-			return error;
+				"Could not create semaphore: \"Image available\".");
+			return -1;
 		}
 
-		error = vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
-						&(vulkan->render_complete[i]));
-		if (error)
+		if (vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
+			&(vulkan->render_complete[i])) != VK_SUCCESS)
 		{
 			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"Could not create semaphore: \"Render complete\".\n");
-			return error;
+				"Could not create semaphore: \"Render complete\".");
+			return -1;
 		}
 	}
 
-	return VK_SUCCESS;
+	return 0;
 }
 
-int vka_create_swapchain(vka_vulkan_t *vulkan, int *recreate_pipelines)
+int vka_create_swapchain(vka_vulkan_t *vulkan)
 {
 	// Used for initial creation AND recreation of swapchain.
-	int error;
-
 	vka_device_wait_idle(vulkan);
 
 	if (vulkan->swapchain_image_views != NULL)
@@ -907,39 +870,37 @@ int vka_create_swapchain(vka_vulkan_t *vulkan, int *recreate_pipelines)
 	VkSwapchainKHR old_swapchain = vulkan->swapchain;
 
 	uint32_t num_formats;
-	error = vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physical_device, vulkan->surface,
-									&num_formats, NULL);
-	if (error)
+	if (vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physical_device, vulkan->surface,
+							&num_formats, NULL) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not enumerate surface formats.\n");
-		return error;
+			"Could not enumerate surface formats.");
+		return -1;
 	}
 
 	VkSurfaceFormatKHR *formats = malloc(num_formats * sizeof(VkSurfaceFormatKHR));
 	if (formats == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for array of surface formats.\n");
-		return VKA_ERROR;
+			"Could not allocate memory for array of surface formats.");
+		return -1;
 	}
 
-	error = vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physical_device, vulkan->surface,
-								&num_formats, formats);
-	if (error)
+	if (vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physical_device, vulkan->surface,
+						&num_formats, formats) != VK_SUCCESS)
 	{
 		free(formats);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not get array of surface formats.\n");
-		return error;
+			"Could not get array of surface formats.");
+		return -1;
 	}
 
 	if (num_formats < 1)
 	{
 		free(formats);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"No surface formats to choose from.\n");
-		return VKA_ERROR;
+				"No surface formats to choose from.");
+		return -1;
 	}
 
 	VkSurfaceFormatKHR chosen_format = formats[0];
@@ -963,39 +924,37 @@ int vka_create_swapchain(vka_vulkan_t *vulkan, int *recreate_pipelines)
 	free(formats);
 
 	uint32_t num_modes;
-	error = vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->physical_device, vulkan->surface,
-										&num_modes, NULL);
-	if (error)
+	if (vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->physical_device, vulkan->surface,
+							&num_modes, NULL) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not enumerate surface present modes.\n");
-		return error;
+			"Could not enumerate surface present modes.");
+		return -1;
 	}
 
 	VkPresentModeKHR *modes = malloc(num_modes * sizeof(VkPresentModeKHR));
 	if (modes == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for array of surface present modes.\n");
-		return VKA_ERROR;
+			"Could not allocate memory for array of surface present modes.");
+		return -1;
 	}
 
-	error = vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->physical_device, vulkan->surface,
-										&num_modes, modes);
-	if (error)
+	if (vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->physical_device, vulkan->surface,
+							&num_modes, modes) != VK_SUCCESS)
 	{
 		free(modes);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not get array of surface present modes.\n");
-		return error;
+			"Could not get array of surface present modes.");
+		return -1;
 	}
 
 	if (num_modes < 1)
 	{
 		free(modes);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"No surface present modes to choose from.\n");
-		return VKA_ERROR;
+			"No surface present modes to choose from.");
+		return -1;
 	}
 
 	VkPresentModeKHR chosen_mode = VK_PRESENT_MODE_FIFO_KHR;
@@ -1011,13 +970,12 @@ int vka_create_swapchain(vka_vulkan_t *vulkan, int *recreate_pipelines)
 	free(modes);
 
 	VkSurfaceCapabilitiesKHR capabilities;
-	error = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vulkan->physical_device, vulkan->surface,
-										&capabilities);
-	if (error)
+	if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vulkan->physical_device, vulkan->surface,
+								&capabilities) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not get surface capabilities for the device.\n");
-		return error;
+			"Could not get surface capabilities for the device.");
+		return -1;
 	}
 
 	uint32_t num_images = 2;
@@ -1090,13 +1048,13 @@ int vka_create_swapchain(vka_vulkan_t *vulkan, int *recreate_pipelines)
 		swapchain_info.pQueueFamilyIndices	= queue_family_indices;
 	}
 
-	error = vkCreateSwapchainKHR(vulkan->device, &swapchain_info, NULL, &(vulkan->swapchain));
-	if (error)
+	if (vkCreateSwapchainKHR(vulkan->device, &swapchain_info, NULL,
+				&(vulkan->swapchain)) != VK_SUCCESS)
 	{
 		vulkan->swapchain = old_swapchain;
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-					"Could not create swapchain.\n");
-		return error;
+					"Could not create swapchain.");
+		return -1;
 	}
 
 	if (old_swapchain != VK_NULL_HANDLE)
@@ -1107,42 +1065,40 @@ int vka_create_swapchain(vka_vulkan_t *vulkan, int *recreate_pipelines)
 	/* Calls to free() for swapchain images and image views are
 	 * in vka_vulkan_shutdown() and the start of this function. */
 
-	error = vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain,
-				&(vulkan->num_swapchain_images), NULL);
-	if (error)
+	if (vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain,
+		&(vulkan->num_swapchain_images), NULL) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not get number of swapchain images.\n");
-		return error;
+			"Could not get number of swapchain images.");
+		return -1;
 	}
 
 	vulkan->swapchain_images = malloc(vulkan->num_swapchain_images * sizeof(VkImage));
 	if (vulkan->swapchain_images == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for swapchain images.\n");
-		return VKA_ERROR;
+			"Could not allocate memory for swapchain images.");
+		return -1;
 	}
 	for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 	{
 		vulkan->swapchain_images[i] = VK_NULL_HANDLE;
 	}
 
-	error = vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain,
-		&(vulkan->num_swapchain_images), vulkan->swapchain_images);
-	if (error)
+	if (vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain,
+		&(vulkan->num_swapchain_images), vulkan->swapchain_images) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"Could not get swapchain images.\n");
-		return error;
+				"Could not get swapchain images.");
+		return -1;
 	}
 
 	vulkan->swapchain_image_views = malloc(vulkan->num_swapchain_images * sizeof(VkImageView));
 	if (vulkan->swapchain_image_views == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for swapchain image views.\n");
-		return VKA_ERROR;
+			"Could not allocate memory for swapchain image views.");
+		return -1;
 	}
 	for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 	{
@@ -1169,23 +1125,18 @@ int vka_create_swapchain(vka_vulkan_t *vulkan, int *recreate_pipelines)
 		view_info.subresourceRange.baseArrayLayer	= 0;
 		view_info.subresourceRange.layerCount		= 1;
 
-		error = vkCreateImageView(vulkan->device, &view_info, NULL,
-				&(vulkan->swapchain_image_views[i]));
-		if (error)
+		if (vkCreateImageView(vulkan->device, &view_info, NULL,
+			&(vulkan->swapchain_image_views[i])) != VK_SUCCESS)
 		{
 			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"Could not create swapchain image view.\n");
-			return error;
+				"Could not create swapchain image view.");
+			return -1;
 		}
 	}
 
-	if (recreate_pipelines != NULL)
-	{
-		if (old_format != vulkan->swapchain_format) { *recreate_pipelines = 1; }
-		else { *recreate_pipelines = 0; }
-	}
+	if (old_format != vulkan->swapchain_format) { vulkan->recreate_pipelines = 1; }
 
-	return VK_SUCCESS;
+	return 0;
 }
 
 /***********
@@ -1198,6 +1149,29 @@ void vka_device_wait_idle(vka_vulkan_t *vulkan)
 	vkDeviceWaitIdle(vulkan->device);
 }
 
+int vka_get_next_swapchain_image(vka_vulkan_t *vulkan)
+{
+	VkResult error = vkAcquireNextImageKHR(vulkan->device, vulkan->swapchain, UINT64_MAX,
+		vulkan->image_available[vulkan->current_frame], VK_NULL_HANDLE,
+		&(vulkan->current_swapchain_index));
+
+	if (error)
+	{
+		if ((error == VK_SUBOPTIMAL_KHR) || (error == VK_ERROR_OUT_OF_DATE_KHR))
+		{
+			vulkan->recreate_swapchain = 1;
+		}
+		else
+		{
+			snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
+				"Could not acquire next swapchain image.");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
 /*********
  * Debug *
  *********/
@@ -1205,31 +1179,27 @@ void vka_device_wait_idle(vka_vulkan_t *vulkan)
 #ifdef VKA_DEBUG
 int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 {
-	int error;
-
 	uint32_t num_layers;
-	error = vkEnumerateInstanceLayerProperties(&num_layers, NULL);
-	if (error)
+	if (vkEnumerateInstanceLayerProperties(&num_layers, NULL) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not enumerate instance layers.\n");
-		return error;
+			"Could not enumerate instance layers.");
+		return -1;
 	}
 
 	VkLayerProperties *layers = malloc(num_layers * sizeof(VkLayerProperties));
 	if (layers == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for instance layer properties.\n");
-		return VKA_ERROR;
+			"Could not allocate memory for instance layer properties.");
+		return -1;
 	}
-	error = vkEnumerateInstanceLayerProperties(&num_layers, layers);
-	if (error)
+	if (vkEnumerateInstanceLayerProperties(&num_layers, layers) != VK_SUCCESS)
 	{
 		free(layers);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"Could not get instance layers.\n");
-		return error;
+				"Could not get instance layers.");
+		return -1;
 	}
 
 	int layer_supported = 0;
@@ -1245,34 +1215,32 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	{
 		free(layers);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Required layer \"VK_LAYER_KHRONOS_validation\" not supported.\n");
-		return VKA_ERROR;
+			"Required layer \"VK_LAYER_KHRONOS_validation\" not supported.");
+		return -1;
 	}
 
 	free(layers);
 
 	uint32_t num_extensions;
-	error = vkEnumerateInstanceExtensionProperties(NULL, &num_extensions, NULL);
-	if (error)
+	if (vkEnumerateInstanceExtensionProperties(NULL, &num_extensions, NULL) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not enumerate instance extensions.\n");
-		return error;
+			"Could not enumerate instance extensions.");
+		return -1;
 	}
 
 	VkExtensionProperties *extensions = malloc(num_extensions * sizeof(VkExtensionProperties));
 	if (extensions == NULL)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Could not allocate memory for instance extension properties.\n");
-		return VKA_ERROR;
+			"Could not allocate memory for instance extension properties.");
+		return -1;
 	}
-	error = vkEnumerateInstanceExtensionProperties(NULL, &num_extensions, extensions);
-	if (error)
+	if (vkEnumerateInstanceExtensionProperties(NULL, &num_extensions, extensions) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"Could not get instance extensions.\n");
-		return error;
+				"Could not get instance extensions.");
+		return -1;
 	}
 
 	int extension_supported = 0;
@@ -1288,20 +1256,18 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	{
 		free(extensions);
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-			"Required extension \"%s\" not supported.\n",
+			"Required extension \"%s\" not supported.",
 			VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-		return VKA_ERROR;
+		return -1;
 	}
 
 	free(extensions);
 
-	return VK_SUCCESS;
+	return 0;
 }
 
 int vka_create_debug_messenger(vka_vulkan_t *vulkan)
 {
-	int error;
-
 	VkDebugUtilsMessengerCreateInfoEXT debug_info;
 	memset(&debug_info, 0, sizeof(debug_info));
 	debug_info.sType		= VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -1315,16 +1281,15 @@ int vka_create_debug_messenger(vka_vulkan_t *vulkan)
 	debug_info.pfnUserCallback	= &debug_util_callback;
 	debug_info.pUserData		= NULL;
 
-	error = vkCreateDebugUtilsMessengerEXT(vulkan->instance, &debug_info,
-					NULL, &(vulkan->debug_messenger));
-	if (error)
+	if (vkCreateDebugUtilsMessengerEXT(vulkan->instance, &debug_info,
+			NULL, &(vulkan->debug_messenger)) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, VKA_ERROR_MESSAGE_LENGTH,
-				"Could not create debug messenger.\n");
-		return error;
+				"Could not create debug messenger.");
+		return -1;
 	}
 
-	return VK_SUCCESS;
+	return 0;
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL debug_util_callback(
@@ -1368,7 +1333,7 @@ char *vka_debug_get_type(VkDebugUtilsMessageTypeFlagsEXT type)
 	{ return "UNKNOWN MESSAGE TYPE"; }
 }
 
-void vka_print_vulkan(vka_vulkan_t *vulkan, FILE *file)
+void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 {
 	fprintf(file, "**************************\n");
 	fprintf(file, "* Vulkan base debug info *\n");
@@ -1379,6 +1344,9 @@ void vka_print_vulkan(vka_vulkan_t *vulkan, FILE *file)
 		fprintf(file, "Sampler anisotropy\t\t\tEnabled\n");
 	}
 	else { fprintf(file, "Sampler anisotropy\t\t\tNot enabled\n"); }
+
+	fprintf(file, "Max memory allocation size\t\t= %luMB\n",
+		(vulkan->config.max_memory_allocation_size / (1024 * 1024)));
 
 	fprintf(file, "\n");
 

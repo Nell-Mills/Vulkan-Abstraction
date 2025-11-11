@@ -13,9 +13,9 @@
 #define VKA_API_VERSION_MAJOR 1
 #define VKA_API_VERSION_MINOR 3
 #define VKA_MAX_NAME_LENGTH 64
-#define VKA_ERROR_MESSAGE_LENGTH 1024
-#define VKA_ERROR -1
 #define VKA_MAX_FRAMES_IN_FLIGHT 2
+
+#define VKA_ERROR_MESSAGE_LENGTH 1024
 
 typedef struct
 {
@@ -69,6 +69,11 @@ typedef struct
 	VkImage *swapchain_images;
 	VkImageView *swapchain_image_views;
 
+	uint8_t recreate_swapchain;
+	uint8_t recreate_pipelines;
+	uint8_t current_frame;
+	uint32_t current_swapchain_index;
+
 	char error_message[VKA_ERROR_MESSAGE_LENGTH];
 	#ifdef VKA_DEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
@@ -86,16 +91,17 @@ int vka_create_instance(vka_vulkan_t *vulkan);
 int vka_create_surface(vka_vulkan_t *vulkan);
 int vka_create_device(vka_vulkan_t *vulkan);
 int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_device,
-		uint32_t *graphics_family_index, uint32_t *present_family_index,
-		VkDeviceSize *max_memory_allocation_size, VkBool32 *sampler_anisotropy);
+	uint32_t *graphics_family_index, uint32_t *present_family_index,
+	VkDeviceSize *max_memory_allocation_size, VkBool32 *sampler_anisotropy);
 int vka_create_command_pool(vka_vulkan_t *vulkan);
 int vka_create_command_buffers(vka_vulkan_t *vulkan);
 int vka_create_command_fences(vka_vulkan_t *vulkan);
 int vka_create_semaphores(vka_vulkan_t *vulkan);
-int vka_create_swapchain(vka_vulkan_t *vulkan, int *recreate_pipelines);
+int vka_create_swapchain(vka_vulkan_t *vulkan);
 
 // Utility:
 void vka_device_wait_idle(vka_vulkan_t *vulkan);
+int vka_get_next_swapchain_image(vka_vulkan_t *vulkan);
 
 // Debug:
 #ifdef VKA_DEBUG
@@ -108,8 +114,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_util_callback(
 	void *user_pointer);
 char *vka_debug_get_severity(VkDebugUtilsMessageSeverityFlagBitsEXT severity);
 char *vka_debug_get_type(VkDebugUtilsMessageTypeFlagsEXT type);
-
-void vka_print_vulkan(vka_vulkan_t *vulkan, FILE *file);
+void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan);
 #endif
 
 #endif

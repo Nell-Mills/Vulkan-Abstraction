@@ -3,7 +3,7 @@
 int main(int argc, char **argv)
 {
 	vka_vulkan_t vulkan = vka_vulkan_initialise();
-	int error = vka_vulkan_setup(&vulkan);
+	VkResult error = vka_vulkan_setup(&vulkan);
 	if (error)
 	{
 		printf("Error: %s", vulkan.error_message);
