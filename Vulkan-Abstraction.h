@@ -10,18 +10,23 @@
 #include <SDL3/SDL_vulkan.h>
 #include <Volk/volk.h>
 
+#ifndef MAX_NAME_LENGTH
+#define MAX_NAME_LENGTH 64
+#endif
+
+#ifndef MAX_ERROR_LENGTH
+#define MAX_ERROR_LENGTH 1024
+#endif
+
 #define VKA_API_VERSION_MAJOR 1
 #define VKA_API_VERSION_MINOR 3
-#define VKA_MAX_NAME_LENGTH 64
 #define VKA_MAX_FRAMES_IN_FLIGHT 2
-
-#define VKA_ERROR_MESSAGE_LENGTH 1024
 
 typedef struct
 {
-	char application_name[VKA_MAX_NAME_LENGTH];
-	char engine_name[VKA_MAX_NAME_LENGTH];
-	char window_name[VKA_MAX_NAME_LENGTH];
+	char application_name[MAX_NAME_LENGTH];
+	char engine_name[MAX_NAME_LENGTH];
+	char window_name[MAX_NAME_LENGTH];
 
 	uint32_t application_version;
 	uint32_t engine_version;
@@ -74,7 +79,7 @@ typedef struct
 	uint8_t current_frame;
 	uint32_t current_swapchain_index;
 
-	char error_message[VKA_ERROR_MESSAGE_LENGTH];
+	char error_message[MAX_ERROR_LENGTH];
 	#ifdef VKA_DEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
 	#endif

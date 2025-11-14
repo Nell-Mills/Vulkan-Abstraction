@@ -11,7 +11,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	#ifdef VKA_DEBUG
-	vka_print_vulkan(&vulkan, stdout);
+	vka_vulkan_print(stdout, &vulkan);
 	#endif
 
 	SDL_Event event;
