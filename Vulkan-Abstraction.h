@@ -1,7 +1,7 @@
 #ifndef VULKAN_ABSTRACTION_H
 #define VULKAN_ABSTRACTION_H
 
-#include <Config/Config.h>
+#include <NM-Config/Config.h>
 
 #include <stdint.h>
 #include <stdio.h>
