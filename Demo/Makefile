@@ -1,5 +1,14 @@
 # Compile the Vulkan Abstraction project demo.
 
+CONF_URL	:= https://gitlab.com/Nell-Mills/Config.git
+CONF_DIR	:= Third-Party/Config
+CONF_FILES	:= Config.h LICENSE
+CONF_CLONE	:= git clone $(CONF_URL) $(CONF_DIR)/Temp && \
+		$(foreach file, $(CONF_FILES), cp $(CONF_DIR)/Temp/$(file) $(CONF_DIR) &&)\
+		rm -rf $(CONF_DIR)/Temp
+
+DEPS_CLONE := $(CONF_CLONE) &&
+
 DEPS_PROJECT :=\
 $(wildcard ../*.c)
 
@@ -7,16 +16,15 @@ DEPS_THIRD_PARTY :=\
 $(wildcard Third-Party/Volk/*.c)
 
 CC	:= gcc -std=c99 -Wall -Wextra -Wno-unused-parameter
-OUT	:= VKA-Demo
+OUT	:= -o VKA-Demo
 MAIN	:= VKA-Demo.c
 DEPS	:= $(DEPS_PROJECT) $(DEPS_THIRD_PARTY)
 CFLAGS	:= -I Third-Party
 LFLAGS	:= -L Libs -Wl,-rpath '$$ORIGIN/Libs' -lSDL3
-DEFINES	:= -D MAX_NAME_LENGTH=64 -D MAX_ERROR_LENGTH=1024
 DEBUG	:= -D VKA_DEBUG -g -O0
 
 release: $(MAIN)
-	$(CC) $(MAIN) $(DEPS) $(DEFINES) $(CFLAGS) -o $(OUT) $(LFLAGS)
+	$(DEPS_CLONE) $(CC) $(MAIN) $(DEPS) $(CFLAGS) $(OUT) $(LFLAGS)
 
 debug: $(MAIN)
-	$(CC) $(MAIN) $(DEPS) $(DEFINES) $(DEBUG) $(CFLAGS) -o $(OUT) $(LFLAGS)
+	$(DEPS_CLONE) $(CC) $(MAIN) $(DEPS) $(DEBUG) $(CFLAGS) $(OUT) $(LFLAGS)
