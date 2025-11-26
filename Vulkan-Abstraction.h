@@ -14,7 +14,10 @@
 
 #define VKA_API_VERSION_MAJOR 1
 #define VKA_API_VERSION_MINOR 3
+
+#ifndef VKA_MAX_FRAMES_IN_FLIGHT
 #define VKA_MAX_FRAMES_IN_FLIGHT 2
+#endif
 
 typedef struct
 {
