@@ -18,15 +18,10 @@
 
 typedef struct
 {
-	char application_name[NM_MAX_NAME_LENGTH];
-	char engine_name[NM_MAX_NAME_LENGTH];
-	char window_name[NM_MAX_NAME_LENGTH];
+	char name[NM_MAX_NAME_LENGTH];
 
-	uint32_t application_version;
-	uint32_t engine_version;
-
-	int minimum_screen_width;
-	int minimum_screen_height;
+	int minimum_width;
+	int minimum_height;
 
 	// Feature requirements (after device creation, these represent enabled features):
 	VkPhysicalDeviceFeatures enabled_features;
@@ -80,11 +75,8 @@ typedef struct
 } vka_vulkan_t;
 
 // Main Vulkan base:
-vka_vulkan_t vka_vulkan_initialise();
 int vka_vulkan_setup(vka_vulkan_t *vulkan);
 void vka_vulkan_shutdown(vka_vulkan_t *vulkan);
-
-// Main Vulkan base helpers:
 int vka_create_window(vka_vulkan_t *vulkan);
 int vka_create_instance(vka_vulkan_t *vulkan);
 int vka_create_surface(vka_vulkan_t *vulkan);

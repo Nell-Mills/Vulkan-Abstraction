@@ -1,6 +1,6 @@
 # Compile the Vulkan Abstraction project demo.
 
-CONF_URL	:= https://gitlab.com/Nell-Mills/Config.git
+CONF_URL	:= https://github.com/Nell-Mills/Config.git
 CONF_DIR	:= Include/NM-Config
 CONF_FILES	:= Config.h LICENSE
 CONF_CLONE	:= git clone $(CONF_URL) $(CONF_DIR)/Temp && \

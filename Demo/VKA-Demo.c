@@ -2,9 +2,8 @@
 
 int main(int argc, char **argv)
 {
-	vka_vulkan_t vulkan = vka_vulkan_initialise();
-	VkResult error = vka_vulkan_setup(&vulkan);
-	if (error)
+	vka_vulkan_t vulkan = {0};
+	if (vka_vulkan_setup(&vulkan))
 	{
 		printf("Error: %s", vulkan.error_message);
 		vka_vulkan_shutdown(&vulkan);

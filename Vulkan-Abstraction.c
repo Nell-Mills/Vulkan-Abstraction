@@ -4,85 +4,29 @@
  * Main Vulkan base *
  ********************/
 
-vka_vulkan_t vka_vulkan_initialise()
-{
-	vka_vulkan_t vulkan;
-	memset(&vulkan, 0, sizeof(vulkan));
-
-	// Config:
-	strcpy(vulkan.config.application_name, "Application");
-	strcpy(vulkan.config.engine_name, "Engine");
-	strcpy(vulkan.config.window_name, "Window");
-
-	vulkan.config.application_version	= VK_MAKE_VERSION(1, 0, 0);
-	vulkan.config.engine_version		= VK_MAKE_VERSION(1, 0, 0);
-
-	vulkan.config.minimum_screen_width	= 640;
-	vulkan.config.minimum_screen_height	= 480;
-
-	vulkan.config.enabled_features_11.sType =
-		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-	vulkan.config.enabled_features_11.pNext = NULL;
-
-	vulkan.config.enabled_features_12.sType =
-		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-	vulkan.config.enabled_features_12.pNext = NULL;
-
-	vulkan.config.enabled_features_13.sType =
-		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-	vulkan.config.enabled_features_13.pNext = NULL;
-
-	vulkan.config.max_memory_allocation_size = 1073741824;
-	vulkan.config.max_sampler_descriptors = 1024;
-
-	// Main data:
-	vulkan.window			= NULL;
-	vulkan.instance			= VK_NULL_HANDLE;
-	vulkan.surface			= VK_NULL_HANDLE;
-
-	vulkan.physical_device		= VK_NULL_HANDLE;
-	vulkan.device			= VK_NULL_HANDLE;
-	vulkan.graphics_family_index	= 100;
-	vulkan.graphics_queue		= VK_NULL_HANDLE;
-	vulkan.present_family_index	= 100;
-	vulkan.present_queue		= VK_NULL_HANDLE;
-
-	vulkan.command_pool		= VK_NULL_HANDLE;
-
-	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
-	{
-		vulkan.command_buffers[i]	= VK_NULL_HANDLE;
-		vulkan.command_fences[i]	= VK_NULL_HANDLE;
-
-		vulkan.image_available[i]	= VK_NULL_HANDLE;
-		vulkan.render_complete[i]	= VK_NULL_HANDLE;
-	}
-
-	vulkan.num_swapchain_images	= 0;
-	vulkan.swapchain_format		= VK_FORMAT_UNDEFINED;
-	vulkan.swapchain_extent.width	= 0;
-	vulkan.swapchain_extent.height	= 0;
-	vulkan.swapchain		= VK_NULL_HANDLE;
-	vulkan.swapchain_images		= NULL;
-	vulkan.swapchain_image_views	= NULL;
-
-	vulkan.recreate_swapchain	= 0;
-	vulkan.recreate_pipelines	= 0;
-	vulkan.current_frame		= 0;
-	vulkan.current_swapchain_index	= 0;
-
-	strcpy(vulkan.error_message, "");
-	#ifdef VKA_DEBUG
-	vulkan.debug_messenger		= VK_NULL_HANDLE;
-	#endif
-
-	return vulkan;
-}
-
 int vka_vulkan_setup(vka_vulkan_t *vulkan)
 {
+	// Set up default values:
+	if (!strcmp(vulkan->config.name, "")) { strcpy(vulkan->config.name, "Vulkan Application"); }
+	if (vulkan->config.minimum_width < 640) { vulkan->config.minimum_width = 640; }
+	if (vulkan->config.minimum_height < 480) { vulkan->config.minimum_height = 480; }
+
+	vulkan->config.enabled_features_11.sType =
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+
+	vulkan->config.enabled_features_12.sType =
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 	vulkan->config.enabled_features_12.pNext = &(vulkan->config.enabled_features_11);
+
+	vulkan->config.enabled_features_13.sType =
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
 	vulkan->config.enabled_features_13.pNext = &(vulkan->config.enabled_features_12);
+
+	vulkan->config.max_memory_allocation_size = 1073741824;
+	vulkan->config.max_sampler_descriptors = 1024;
+	vulkan->graphics_family_index = 100;
+	vulkan->present_family_index = 100;
+	vulkan->swapchain_format = VK_FORMAT_UNDEFINED;
 
 	if (vka_create_window(vulkan)) { return -1; }
 	if (volkInitialize()) { return -1; }
@@ -117,7 +61,7 @@ void vka_vulkan_shutdown(vka_vulkan_t *vulkan)
 	{
 		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 		{
-			if (vulkan->swapchain_image_views[i] != VK_NULL_HANDLE)
+			if (vulkan->swapchain_image_views[i])
 			{
 				vkDestroyImageView(vulkan->device,
 					vulkan->swapchain_image_views[i], NULL);
@@ -134,7 +78,7 @@ void vka_vulkan_shutdown(vka_vulkan_t *vulkan)
 		vulkan->swapchain_images = NULL;
 	}
 
-	if (vulkan->swapchain != VK_NULL_HANDLE)
+	if (vulkan->swapchain)
 	{
 		vkDestroySwapchainKHR(vulkan->device, vulkan->swapchain, NULL);
 		vulkan->swapchain = VK_NULL_HANDLE;
@@ -142,12 +86,12 @@ void vka_vulkan_shutdown(vka_vulkan_t *vulkan)
 
 	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		if (vulkan->image_available[i] != VK_NULL_HANDLE)
+		if (vulkan->image_available[i])
 		{
 			vkDestroySemaphore(vulkan->device, vulkan->image_available[i], NULL);
 			vulkan->image_available[i] = VK_NULL_HANDLE;
 		}
-		if (vulkan->render_complete[i] != VK_NULL_HANDLE)
+		if (vulkan->render_complete[i])
 		{
 			vkDestroySemaphore(vulkan->device, vulkan->render_complete[i], NULL);
 			vulkan->render_complete[i] = VK_NULL_HANDLE;
@@ -156,14 +100,14 @@ void vka_vulkan_shutdown(vka_vulkan_t *vulkan)
 
 	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		if (vulkan->command_fences[i] != VK_NULL_HANDLE)
+		if (vulkan->command_fences[i])
 		{
 			vkDestroyFence(vulkan->device, vulkan->command_fences[i], NULL);
 			vulkan->command_fences[i] = VK_NULL_HANDLE;
 		}
 	}
 
-	if (vulkan->command_pool != VK_NULL_HANDLE)
+	if (vulkan->command_pool)
 	{
 		vkDestroyCommandPool(vulkan->device, vulkan->command_pool, NULL);
 		vulkan->command_pool = VK_NULL_HANDLE;
@@ -174,27 +118,27 @@ void vka_vulkan_shutdown(vka_vulkan_t *vulkan)
 		vulkan->command_buffers[i] = VK_NULL_HANDLE;
 	}
 
-	if (vulkan->device != VK_NULL_HANDLE)
+	if (vulkan->device)
 	{
 		vkDestroyDevice(vulkan->device, NULL);
 		vulkan->device = VK_NULL_HANDLE;
 	}
 
 	#ifdef VKA_DEBUG
-	if (vulkan->debug_messenger != VK_NULL_HANDLE)
+	if (vulkan->debug_messenger)
 	{
 		vkDestroyDebugUtilsMessengerEXT(vulkan->instance, vulkan->debug_messenger, NULL);
 		vulkan->debug_messenger = VK_NULL_HANDLE;
 	}
 	#endif
 
-	if (vulkan->surface != VK_NULL_HANDLE)
+	if (vulkan->surface)
 	{
 		vkDestroySurfaceKHR(vulkan->instance, vulkan->surface, NULL);
 		vulkan->surface = VK_NULL_HANDLE;
 	}
 
-	if (vulkan->instance != VK_NULL_HANDLE)
+	if (vulkan->instance)
 	{
 		vkDestroyInstance(vulkan->instance, NULL);
 		vulkan->instance = VK_NULL_HANDLE;
@@ -205,10 +149,6 @@ void vka_vulkan_shutdown(vka_vulkan_t *vulkan)
 	SDL_Quit();
 }
 
-/****************************
- * Main Vulkan base helpers *
- ****************************/
-
 int vka_create_window(vka_vulkan_t *vulkan)
 {
 	if (SDL_Init(SDL_INIT_VIDEO) != true)
@@ -218,8 +158,8 @@ int vka_create_window(vka_vulkan_t *vulkan)
 		return -1;
 	}
 
-	vulkan->window = SDL_CreateWindow(vulkan->config.window_name,
-		vulkan->config.minimum_screen_width, vulkan->config.minimum_screen_height,
+	vulkan->window = SDL_CreateWindow(vulkan->config.name,
+		vulkan->config.minimum_width, vulkan->config.minimum_height,
 		SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 	if (!vulkan->window)
 	{
@@ -235,8 +175,8 @@ int vka_create_window(vka_vulkan_t *vulkan)
 		return -1;
 	}
 
-	if (SDL_SetWindowMinimumSize(vulkan->window, vulkan->config.minimum_screen_width,
-					vulkan->config.minimum_screen_height) != true)
+	if (SDL_SetWindowMinimumSize(vulkan->window, vulkan->config.minimum_width,
+					vulkan->config.minimum_height) != true)
 	{
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not set window minimum size -> %s.", SDL_GetError());
@@ -252,10 +192,10 @@ int vka_create_instance(vka_vulkan_t *vulkan)
 	memset(&application_info, 0, sizeof(application_info));
 	application_info.sType			= VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	application_info.pNext			= NULL;
-	application_info.pApplicationName	= vulkan->config.application_name;
-	application_info.applicationVersion	= vulkan->config.application_version;
-	application_info.pEngineName		= vulkan->config.engine_name;
-	application_info.engineVersion		= vulkan->config.engine_version;
+	application_info.pApplicationName	= vulkan->config.name;
+	application_info.applicationVersion	= VK_MAKE_VERSION(1, 0, 0);
+	application_info.pEngineName		= vulkan->config.name;
+	application_info.engineVersion		= VK_MAKE_VERSION(1, 0, 0);
 	application_info.apiVersion		= VK_MAKE_API_VERSION(0, VKA_API_VERSION_MAJOR,
 								VKA_API_VERSION_MINOR, 0);
 
@@ -848,7 +788,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	{
 		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 		{
-			if (vulkan->swapchain_image_views[i] != VK_NULL_HANDLE)
+			if (vulkan->swapchain_image_views[i])
 			{
 				vkDestroyImageView(vulkan->device,
 					vulkan->swapchain_image_views[i], NULL);
@@ -1055,10 +995,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 		return -1;
 	}
 
-	if (old_swapchain != VK_NULL_HANDLE)
-	{
-		vkDestroySwapchainKHR(vulkan->device, old_swapchain, NULL);
-	}
+	if (old_swapchain) { vkDestroySwapchainKHR(vulkan->device, old_swapchain, NULL); }
 
 	/* Calls to free() for swapchain images and image views are
 	 * in vka_vulkan_shutdown() and the start of this function. */
