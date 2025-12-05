@@ -27,4 +27,4 @@ Link SDL3: -lSDL3
 ## Usage:
 
 Populate a vka\_vulkan\_t struct with configuration - see the vka\_vulkan\_config\_t struct.  
-Use vka\_vulkan\_setup() and vka\_vulkan\_shutdown().  
+Use vka\_setup\_vulkan() and vka\_shutdown_\vulkan().  

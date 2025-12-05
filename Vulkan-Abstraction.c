@@ -4,12 +4,16 @@
  * Main Vulkan base *
  ********************/
 
-int vka_vulkan_setup(vka_vulkan_t *vulkan)
+int vka_setup_vulkan(vka_vulkan_t *vulkan)
 {
-	// Set up default values:
-	if (!strcmp(vulkan->config.name, "")) { strcpy(vulkan->config.name, "Vulkan Application"); }
+	/* Set up default values. Enabling these features by default:
+	 * Multi draw indirect, descriptor indexing, draw indirect count,
+	 * runtime descriptor array and dynamic rendering. */
+	if (!strcmp(vulkan->name, "")) { strcpy(vulkan->name, "Vulkan Application"); }
 	if (vulkan->config.minimum_width < 640) { vulkan->config.minimum_width = 640; }
 	if (vulkan->config.minimum_height < 480) { vulkan->config.minimum_height = 480; }
+
+	vulkan->config.enabled_features.multiDrawIndirect = VK_TRUE;
 
 	vulkan->config.enabled_features_11.sType =
 		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
@@ -17,10 +21,14 @@ int vka_vulkan_setup(vka_vulkan_t *vulkan)
 	vulkan->config.enabled_features_12.sType =
 		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 	vulkan->config.enabled_features_12.pNext = &(vulkan->config.enabled_features_11);
+	vulkan->config.enabled_features_12.descriptorIndexing = VK_TRUE;
+	vulkan->config.enabled_features_12.drawIndirectCount = VK_TRUE;
+	vulkan->config.enabled_features_12.runtimeDescriptorArray = VK_TRUE;
 
 	vulkan->config.enabled_features_13.sType =
 		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
 	vulkan->config.enabled_features_13.pNext = &(vulkan->config.enabled_features_12);
+	vulkan->config.enabled_features_13.dynamicRendering = VK_TRUE;
 
 	vulkan->config.max_memory_allocation_size = 1073741824;
 	vulkan->config.max_sampler_descriptors = 1024;
@@ -53,7 +61,7 @@ int vka_vulkan_setup(vka_vulkan_t *vulkan)
 	return 0;
 }
 
-void vka_vulkan_shutdown(vka_vulkan_t *vulkan)
+void vka_shutdown_vulkan(vka_vulkan_t *vulkan)
 {
 	vka_device_wait_idle(vulkan);
 
@@ -158,7 +166,7 @@ int vka_create_window(vka_vulkan_t *vulkan)
 		return -1;
 	}
 
-	vulkan->window = SDL_CreateWindow(vulkan->config.name,
+	vulkan->window = SDL_CreateWindow(vulkan->name,
 		vulkan->config.minimum_width, vulkan->config.minimum_height,
 		SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 	if (!vulkan->window)
@@ -192,9 +200,9 @@ int vka_create_instance(vka_vulkan_t *vulkan)
 	memset(&application_info, 0, sizeof(application_info));
 	application_info.sType			= VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	application_info.pNext			= NULL;
-	application_info.pApplicationName	= vulkan->config.name;
+	application_info.pApplicationName	= vulkan->name;
 	application_info.applicationVersion	= VK_MAKE_VERSION(1, 0, 0);
-	application_info.pEngineName		= vulkan->config.name;
+	application_info.pEngineName		= vulkan->name;
 	application_info.engineVersion		= VK_MAKE_VERSION(1, 0, 0);
 	application_info.apiVersion		= VK_MAKE_API_VERSION(0, VKA_API_VERSION_MAJOR,
 								VKA_API_VERSION_MINOR, 0);
@@ -224,10 +232,10 @@ int vka_create_instance(vka_vulkan_t *vulkan)
 		extensions[i] = malloc(NM_MAX_NAME_LENGTH * sizeof(char));
 		if (!extensions[i])
 		{
-			for (uint32_t j = 0; j < i; j++) { free(extensions[j]); }
-			free(extensions);
 			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 				"Could not allocate memory for extension names.");
+			for (uint32_t j = 0; j < i; j++) { free(extensions[j]); }
+			free(extensions);
 			return -1;
 		}
 	}
@@ -253,19 +261,18 @@ int vka_create_instance(vka_vulkan_t *vulkan)
 
 	if (vkCreateInstance(&instance_create_info, NULL, &(vulkan->instance)) != VK_SUCCESS)
 	{
-		for (uint32_t i = 0; i < extension_count; i++) { free(extensions[i]); }
-		free(extensions);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not create Vulkan instance.");
 		vulkan->instance = VK_NULL_HANDLE;
+		for (uint32_t i = 0; i < extension_count; i++) { free(extensions[i]); }
+		free(extensions);
 		return -1;
 	}
 
-	for (uint32_t i = 0; i < extension_count; i++) { free(extensions[i]); }
-	free(extensions);
-
 	volkLoadInstanceOnly(vulkan->instance);
 
+	for (uint32_t i = 0; i < extension_count; i++) { free(extensions[i]); }
+	free(extensions);
 	return 0;
 }
 
@@ -304,9 +311,9 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	if (vkEnumeratePhysicalDevices(vulkan->instance, &num_physical_devices,
 					physical_devices) != VK_SUCCESS)
 	{
-		free(physical_devices);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not get array of physical devices.");
+		free(physical_devices);
 		return -1;
 	}
 
@@ -402,8 +409,8 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	if (vkCreateDevice(vulkan->physical_device, &device_info, NULL,
 				&(vulkan->device)) != VK_SUCCESS)
 	{
-		free(queue_info);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH, "Could not create device.");
+		free(queue_info);
 		return -1;
 	}
 
@@ -413,7 +420,7 @@ int vka_create_device(vka_vulkan_t *vulkan)
 
 	vkGetDeviceQueue(vulkan->device, vulkan->graphics_family_index, 0,
 					&(vulkan->graphics_queue));
-	if (vulkan->graphics_queue == VK_NULL_HANDLE)
+	if (!vulkan->graphics_queue)
 	{
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not retrieve graphics queue.");
@@ -422,7 +429,7 @@ int vka_create_device(vka_vulkan_t *vulkan)
 
 	vkGetDeviceQueue(vulkan->device, vulkan->present_family_index, 0,
 					&(vulkan->present_queue));
-	if (vulkan->present_queue == VK_NULL_HANDLE)
+	if (!vulkan->present_queue)
 	{
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not retrieve present queue.");
@@ -490,18 +497,17 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	if (vkEnumerateDeviceExtensionProperties(physical_device, NULL,
 		&num_supported_extensions, supported_extensions) != VK_SUCCESS)
 	{
-		free(supported_extensions);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not get array of supported extensions for physical device: %s.",
 			get_properties.properties.deviceName);
+		free(supported_extensions);
 		return -1;
 	}
 
 	int supported = 0;
 	for (uint32_t i = 0; i < num_supported_extensions; i++)
 	{
-		if (strcmp(VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-			supported_extensions[i].extensionName) == 0)
+		if (!strcmp(VK_KHR_SWAPCHAIN_EXTENSION_NAME, supported_extensions[i].extensionName))
 		{
 			supported = 1;
 			break;
@@ -584,10 +590,10 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	uint8_t *supported_features_array = malloc(total_size);
 	if (!supported_features_array)
 	{
-		free(desired_features_array);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for feature comparison for device: %s.",
 			get_properties.properties.deviceName);
+		free(desired_features_array);
 		return -1;
 	}
 
@@ -604,14 +610,14 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 		if ((desired_features_array[i] & supported_features_array[i]) !=
 						desired_features_array[i])
 		{
-			free(desired_features_array);
 			free(supported_features_array);
+			free(desired_features_array);
 			return -1;
 		}
 	}
 
-	free(desired_features_array);
 	free(supported_features_array);
+	free(desired_features_array);
 
 	// TODO - check maxPerSetDescriptors and score if >= config. Outweigh anisotropy.
 
@@ -677,7 +683,6 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	}
 
 	free(queue_families);
-
 	return score;
 }
 
@@ -828,17 +833,17 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physical_device, vulkan->surface,
 						&num_formats, formats) != VK_SUCCESS)
 	{
-		free(formats);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not get array of surface formats.");
+		free(formats);
 		return -1;
 	}
 
 	if (num_formats < 1)
 	{
-		free(formats);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"No surface formats to choose from.");
+		free(formats);
 		return -1;
 	}
 
@@ -882,17 +887,17 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->physical_device, vulkan->surface,
 							&num_modes, modes) != VK_SUCCESS)
 	{
-		free(modes);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not get array of surface present modes.");
+		free(modes);
 		return -1;
 	}
 
 	if (num_modes < 1)
 	{
-		free(modes);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"No surface present modes to choose from.");
+		free(modes);
 		return -1;
 	}
 
@@ -990,8 +995,8 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (vkCreateSwapchainKHR(vulkan->device, &swapchain_info, NULL,
 				&(vulkan->swapchain)) != VK_SUCCESS)
 	{
-		vulkan->swapchain = old_swapchain;
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH, "Could not create swapchain.");
+		vulkan->swapchain = old_swapchain;
 		return -1;
 	}
 
@@ -1074,14 +1079,406 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	return 0;
 }
 
+/*************
+ * Pipelines *
+ *************/
+
+int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
+{
+	if (!pipeline->layout)
+	{
+		VkPipelineLayoutCreateInfo pipeline_layout_info;
+		memset(&pipeline_layout_info, 0, sizeof(pipeline_layout_info));
+		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipeline_layout_info.pNext			= NULL;
+		pipeline_layout_info.flags			= 0;
+		pipeline_layout_info.setLayoutCount = pipeline->config.num_descriptor_set_layouts;
+		pipeline_layout_info.pSetLayouts = pipeline->config.descriptor_set_layouts;
+		pipeline_layout_info.pushConstantRangeCount	= 0;
+		pipeline_layout_info.pPushConstantRanges	= NULL;
+
+		if (vkCreatePipelineLayout(vulkan->device, &pipeline_layout_info,
+					NULL, &(pipeline->layout)) != VK_SUCCESS)
+		{
+			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+				"Could not create pipeline layout for \"%s\".", pipeline->name);
+			return -1;
+		}
+	}
+
+	if (pipeline->config.line_width < 1.f) { pipeline->config.line_width = 1.f; }
+
+	for (uint32_t i = 0; i < pipeline->config.num_vertex_attributes; i++)
+	{
+		if (pipeline->config.formats[i] == VK_FORMAT_UNDEFINED)
+		{
+			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+				"Vertex attribute format %u for pipeline \"%s\" has no format.",
+				i, pipeline->name);
+			return -1;
+		}
+	}
+
+	VkShaderStageFlagBits stage_flags[3] = { VK_SHADER_STAGE_VERTEX_BIT,
+						VK_SHADER_STAGE_FRAGMENT_BIT,
+						VK_SHADER_STAGE_COMPUTE_BIT };
+	int num_shader_stages = 0;
+	VkPipelineShaderStageCreateInfo shader_stages[3];
+	memset(shader_stages, 0, 3 * sizeof(shader_stages[0]));
+	for (int i = 0; i < 3; i++)
+	{
+		if (pipeline->shaders[i].shader)
+		{
+			shader_stages[num_shader_stages].sType =
+				VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			shader_stages[num_shader_stages].pNext			= NULL;
+			shader_stages[num_shader_stages].flags			= 0;
+			shader_stages[num_shader_stages].stage			= stage_flags[i];
+			shader_stages[num_shader_stages].module = pipeline->shaders[i].shader;
+			shader_stages[num_shader_stages].pName			= "main";
+			shader_stages[num_shader_stages].pSpecializationInfo	= NULL;
+
+			num_shader_stages++;
+		}
+	}
+
+	if (!num_shader_stages)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Pipeline \"%s\" has no shader stages.", pipeline->name);
+		return -1;
+	}
+
+	// Vertex input:
+	VkVertexInputBindingDescription vertex_bindings[VKA_MAX_VERTEX_ATTRIBUTES];
+	memset(vertex_bindings, 0, VKA_MAX_VERTEX_ATTRIBUTES * sizeof(vertex_bindings[0]));
+	for (uint32_t i = 0; i < pipeline->config.num_vertex_bindings; i++)
+	{
+		vertex_bindings[i].binding	= i;
+		vertex_bindings[i].stride	= pipeline->config.strides[i];
+		vertex_bindings[i].inputRate	= VK_VERTEX_INPUT_RATE_VERTEX;
+	}
+
+	VkVertexInputAttributeDescription vertex_attributes[VKA_MAX_VERTEX_ATTRIBUTES];
+	memset(vertex_attributes, 0, VKA_MAX_VERTEX_ATTRIBUTES * sizeof(vertex_attributes[0]));
+	for (uint32_t i = 0; i < pipeline->config.num_vertex_attributes; i++)
+	{
+		vertex_attributes[i].location	= i;
+		vertex_attributes[i].binding	= pipeline->config.bindings[i];
+		vertex_attributes[i].format	= pipeline->config.formats[i];
+		vertex_attributes[i].offset	= pipeline->config.offsets[i];
+	}
+
+	VkPipelineVertexInputStateCreateInfo input_info;
+	memset(&input_info, 0, sizeof(input_info));
+	input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	input_info.pNext				= NULL;
+	input_info.flags				= 0;
+	input_info.vertexBindingDescriptionCount	= pipeline->config.num_vertex_bindings;
+	input_info.pVertexBindingDescriptions		= vertex_bindings;
+	input_info.vertexAttributeDescriptionCount	= pipeline->config.num_vertex_attributes;
+	input_info.pVertexAttributeDescriptions		= vertex_attributes;
+
+	// Input assembly:
+	VkPipelineInputAssemblyStateCreateInfo assembly_info;
+	memset(&assembly_info, 0, sizeof(assembly_info));
+	assembly_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	assembly_info.pNext			= NULL;
+	assembly_info.flags			= 0;
+	assembly_info.primitiveRestartEnable	= VK_FALSE;
+	assembly_info.topology			= pipeline->config.topology;
+
+	// Viewport (will be using dynamic state):
+	VkViewport viewport;
+	memset(&viewport, 0, sizeof(viewport));
+	VkRect2D scissor;
+	memset(&scissor, 0, sizeof(scissor));
+
+	VkPipelineViewportStateCreateInfo viewport_info;
+	memset(&viewport_info, 0, sizeof(viewport_info));
+	viewport_info.sType		= VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewport_info.pNext		= NULL;
+	viewport_info.flags		= 0;
+	viewport_info.viewportCount	= 1;
+	viewport_info.pViewports	= &viewport;
+	viewport_info.scissorCount	= 1;
+	viewport_info.pScissors		= &scissor;
+
+	// Rasterisation:
+	VkPipelineRasterizationStateCreateInfo rasterization_info;
+	memset(&rasterization_info, 0, sizeof(rasterization_info));
+	rasterization_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	rasterization_info.pNext			= NULL;
+	rasterization_info.flags			= 0;
+	rasterization_info.depthClampEnable		= VK_FALSE;
+	rasterization_info.rasterizerDiscardEnable	= VK_FALSE; // TODO - check this.
+	rasterization_info.polygonMode			= VK_POLYGON_MODE_FILL;
+	rasterization_info.cullMode			= pipeline->config.cull_mode;
+	rasterization_info.frontFace			= VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	rasterization_info.depthBiasEnable		= VK_FALSE;
+	rasterization_info.depthBiasConstantFactor	= 0.f;
+	rasterization_info.depthBiasClamp		= 0.f;
+	rasterization_info.depthBiasSlopeFactor		= 0.f;
+	rasterization_info.lineWidth			= pipeline->config.line_width;
+
+	// Multisampling (TODO):
+	VkPipelineMultisampleStateCreateInfo multisample_info;
+	memset(&multisample_info, 0, sizeof(multisample_info));
+	multisample_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisample_info.pNext			= NULL;
+	multisample_info.flags			= 0;
+	multisample_info.rasterizationSamples	= VK_SAMPLE_COUNT_1_BIT;
+	multisample_info.sampleShadingEnable	= VK_FALSE;
+	multisample_info.minSampleShading	= 0.f;
+	multisample_info.pSampleMask		= NULL;
+	multisample_info.alphaToCoverageEnable	= VK_FALSE;
+	multisample_info.alphaToOneEnable	= VK_FALSE;
+
+	// Depth stencil (TODO):
+	VkPipelineDepthStencilStateCreateInfo depth_info;
+	memset(&depth_info, 0, sizeof(depth_info));
+	depth_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depth_info.pNext			= NULL;
+	depth_info.flags			= 0;
+	depth_info.depthTestEnable		= VK_FALSE;
+	depth_info.depthWriteEnable		= VK_FALSE;
+	depth_info.depthCompareOp		= VK_COMPARE_OP_LESS_OR_EQUAL;
+	depth_info.depthBoundsTestEnable	= VK_FALSE;
+	depth_info.stencilTestEnable		= VK_FALSE;
+
+	depth_info.front.failOp			= VK_STENCIL_OP_KEEP;
+	depth_info.front.passOp			= VK_STENCIL_OP_KEEP;
+	depth_info.front.depthFailOp		= VK_STENCIL_OP_KEEP;
+	depth_info.front.compareOp		= VK_COMPARE_OP_NEVER;
+	depth_info.front.compareMask		= 0;
+	depth_info.front.writeMask		= 0;
+	depth_info.front.reference		= 0;
+
+	depth_info.back.failOp			= VK_STENCIL_OP_KEEP;
+	depth_info.back.passOp			= VK_STENCIL_OP_KEEP;
+	depth_info.back.depthFailOp		= VK_STENCIL_OP_KEEP;
+	depth_info.back.compareOp		= VK_COMPARE_OP_NEVER;
+	depth_info.back.compareMask		= 0;
+	depth_info.back.writeMask		= 0;
+	depth_info.back.reference		= 0;
+
+	depth_info.minDepthBounds		= 0.f;
+	depth_info.maxDepthBounds		= 1.f;
+
+	// Blend:
+	VkPipelineColorBlendAttachmentState blend_state;
+	memset(&blend_state, 0, sizeof(blend_state));
+	blend_state.blendEnable		= pipeline->config.blend_enable;
+	blend_state.srcColorBlendFactor	= VK_BLEND_FACTOR_ZERO;
+	blend_state.dstColorBlendFactor	= VK_BLEND_FACTOR_ZERO;
+	blend_state.colorBlendOp	= pipeline->config.colour_blend_op;
+	blend_state.srcAlphaBlendFactor	= VK_BLEND_FACTOR_ZERO;
+	blend_state.dstAlphaBlendFactor	= VK_BLEND_FACTOR_ZERO;
+	blend_state.alphaBlendOp	= pipeline->config.alpha_blend_op;
+	blend_state.colorWriteMask	= pipeline->config.colour_write_mask;
+
+	VkPipelineColorBlendStateCreateInfo blend_info;
+	memset(&blend_info, 0, sizeof(blend_info));
+	blend_info.sType		= VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	blend_info.pNext		= NULL;
+	blend_info.flags		= 0;
+	blend_info.logicOpEnable	= VK_FALSE;
+	blend_info.logicOp		= VK_LOGIC_OP_CLEAR;
+	blend_info.attachmentCount	= 1;
+	blend_info.pAttachments		= &blend_state;
+	blend_info.blendConstants[0]	= 0.f;
+	blend_info.blendConstants[1]    = 0.f;
+	blend_info.blendConstants[2]    = 0.f;
+	blend_info.blendConstants[3]	= 0.f;
+
+	// Dynamic state:
+	VkDynamicState dynamic_state[2];
+	dynamic_state[0] = VK_DYNAMIC_STATE_VIEWPORT;
+	dynamic_state[1] = VK_DYNAMIC_STATE_SCISSOR;
+
+	VkPipelineDynamicStateCreateInfo dynamic_state_info;
+	memset(&dynamic_state_info, 0, sizeof(dynamic_state_info));
+	dynamic_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamic_state_info.pNext		= NULL;
+	dynamic_state_info.flags		= 0;
+	dynamic_state_info.dynamicStateCount	= 2;
+	dynamic_state_info.pDynamicStates	= dynamic_state;
+
+	// Rendering (TODO - account for compute pipelines):
+	VkPipelineRenderingCreateInfo pipeline_rendering_info;
+	memset(&pipeline_rendering_info, 0, sizeof(pipeline_rendering_info));
+	pipeline_rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+	pipeline_rendering_info.pNext			= NULL;
+	pipeline_rendering_info.viewMask		= 0;
+	pipeline_rendering_info.colorAttachmentCount	= 1;
+	pipeline_rendering_info.pColorAttachmentFormats	= &(vulkan->swapchain_format);
+	pipeline_rendering_info.depthAttachmentFormat	= VK_FORMAT_UNDEFINED; // TODO.
+	pipeline_rendering_info.stencilAttachmentFormat	= VK_FORMAT_UNDEFINED;
+
+	// Create pipeline:
+	VkGraphicsPipelineCreateInfo pipeline_info;
+	memset(&pipeline_info, 0, sizeof(pipeline_info));
+	pipeline_info.sType			= VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipeline_info.pNext			= &pipeline_rendering_info;
+	pipeline_info.flags			= 0;
+	pipeline_info.stageCount		= num_shader_stages;
+	pipeline_info.pStages			= shader_stages;
+	pipeline_info.pVertexInputState		= &input_info;
+	pipeline_info.pInputAssemblyState	= &assembly_info;
+	pipeline_info.pTessellationState	= NULL;
+	pipeline_info.pViewportState		= &viewport_info;
+	pipeline_info.pRasterizationState	= &rasterization_info;
+	pipeline_info.pMultisampleState		= &multisample_info;
+	pipeline_info.pDepthStencilState	= &depth_info;
+	pipeline_info.pColorBlendState		= &blend_info;
+	pipeline_info.pDynamicState		= &dynamic_state_info;
+	pipeline_info.layout			= pipeline->layout;
+	pipeline_info.renderPass		= VK_NULL_HANDLE;
+	pipeline_info.subpass			= 0;
+	pipeline_info.basePipelineHandle	= VK_NULL_HANDLE;
+	pipeline_info.basePipelineIndex		= 0;
+
+	if (vkCreateGraphicsPipelines(vulkan->device, VK_NULL_HANDLE, 1,
+		&pipeline_info, NULL, &(pipeline->pipeline)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not create pipeline \"%s\".", pipeline->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
+{
+	if (pipeline->pipeline)
+	{
+		vkDestroyPipeline(vulkan->device, pipeline->pipeline, NULL);
+		pipeline->pipeline = VK_NULL_HANDLE;
+	}
+
+	for (int i = 0; i < 3; i++) { vka_destroy_shader_module(vulkan, &(pipeline->shaders[i])); }
+
+	if (pipeline->layout)
+	{
+		vkDestroyPipelineLayout(vulkan->device, pipeline->layout, NULL);
+		pipeline->layout = VK_NULL_HANDLE;
+	}
+}
+
+void vka_bind_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
+{
+	VkPipelineBindPoint bind_point;
+	if (pipeline->shaders[VKA_SHADER_TYPE_COMPUTE].shader)
+	{
+		bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
+	}
+	else { bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS; }
+	vkCmdBindPipeline(vulkan->command_buffers[vulkan->current_frame],
+					bind_point, pipeline->pipeline);
+}
+
+/***********
+ * Shaders *
+ ***********/
+
+int vka_create_shader_module(vka_vulkan_t *vulkan, vka_shader_t *shader)
+{
+	FILE *shader_file = fopen(shader->path, "rb");
+	if (!shader_file)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not open shader file \"%s\".", shader->path);
+		return -1;
+	}
+
+	if (fseek(shader_file, 0, SEEK_END))
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not navigate shader file \"%s\".", shader->path);
+		fclose(shader_file);
+		return -1;
+	}
+	long file_size = ftell(shader_file);
+	if (file_size == -1)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not get size of shader file \"%s\".", shader->path);
+		fclose(shader_file);
+		return -1;
+	}
+	if (file_size % 4)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Shader file \"%s\" size is not a multiple of 4 bytes.", shader->path);
+		fclose(shader_file);
+		return -1;
+	}
+	rewind(shader_file);
+
+	size_t code_size = file_size;
+	uint32_t *shader_code = malloc(code_size);
+	if (!shader_code)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not allocate memory for shader code from file \"%s\".",
+			shader->path);
+		fclose(shader_file);
+		return -1;
+	}
+
+	if (fread(shader_code, 4, code_size / 4, shader_file) != (code_size / 4))
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not read shader code from file \"%s\".", shader->path);
+		free(shader_code);
+		fclose(shader_file);
+		return -1;
+	}
+
+	fclose(shader_file);
+
+	VkShaderModuleCreateInfo shader_module_info;
+	memset(&shader_module_info, 0, sizeof(shader_module_info));
+	shader_module_info.sType	= VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	shader_module_info.pNext	= NULL;
+	shader_module_info.flags	= 0;
+	shader_module_info.codeSize	= code_size;
+	shader_module_info.pCode	= shader_code;
+
+	// Create a temporary shader module in case this doesn't work out:
+	VkShaderModule temp = VK_NULL_HANDLE;
+	if (vkCreateShaderModule(vulkan->device, &shader_module_info, NULL, &temp) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not create shader module for \"%s\".", shader->path);
+		free(shader_code);
+		return -1;
+	}
+
+	vka_destroy_shader_module(vulkan, shader);
+	shader->shader = temp;
+
+	free(shader_code);
+	return 0;
+}
+
+void vka_destroy_shader_module(vka_vulkan_t *vulkan, vka_shader_t *shader)
+{
+	if (shader->shader)
+	{
+		vkDestroyShaderModule(vulkan->device, shader->shader, NULL);
+		shader->shader = VK_NULL_HANDLE;
+	}
+}
+
 /***********
  * Utility *
  ***********/
 
 void vka_device_wait_idle(vka_vulkan_t *vulkan)
 {
-	if (vulkan->device == VK_NULL_HANDLE) { return; }
-	vkDeviceWaitIdle(vulkan->device);
+	if (vulkan->device) { vkDeviceWaitIdle(vulkan->device); }
 }
 
 int vka_get_next_swapchain_image(vka_vulkan_t *vulkan)
@@ -1090,7 +1487,7 @@ int vka_get_next_swapchain_image(vka_vulkan_t *vulkan)
 		vulkan->image_available[vulkan->current_frame], VK_NULL_HANDLE,
 		&(vulkan->current_swapchain_index));
 
-	if (error)
+	if (error != VK_SUCCESS)
 	{
 		if ((error == VK_SUBOPTIMAL_KHR) || (error == VK_ERROR_OUT_OF_DATE_KHR))
 		{
@@ -1131,16 +1528,16 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	}
 	if (vkEnumerateInstanceLayerProperties(&num_layers, layers) != VK_SUCCESS)
 	{
-		free(layers);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 				"Could not get instance layers.");
+		free(layers);
 		return -1;
 	}
 
 	int layer_supported = 0;
 	for (uint32_t i = 0; i < num_layers; i++)
 	{
-		if (strcmp("VK_LAYER_KHRONOS_validation", layers[i].layerName) == 0)
+		if (!strcmp("VK_LAYER_KHRONOS_validation", layers[i].layerName))
 		{
 			layer_supported = 1;
 			break;
@@ -1148,9 +1545,9 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	}
 	if (!layer_supported)
 	{
-		free(layers);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Required layer \"VK_LAYER_KHRONOS_validation\" not supported.");
+		free(layers);
 		return -1;
 	}
 
@@ -1175,13 +1572,14 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	{
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not get instance extensions.");
+		free(extensions);
 		return -1;
 	}
 
 	int extension_supported = 0;
 	for (uint32_t i = 0; i < num_extensions; i++)
 	{
-		if (strcmp(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, extensions[i].extensionName) == 0)
+		if (!strcmp(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, extensions[i].extensionName))
 		{
 			extension_supported = 1;
 			break;
@@ -1189,15 +1587,14 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	}
 	if (!extension_supported)
 	{
-		free(extensions);
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Required extension \"%s\" not supported.",
 			VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		free(extensions);
 		return -1;
 	}
 
 	free(extensions);
-
 	return 0;
 }
 
@@ -1245,30 +1642,33 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_util_callback(
 char *vka_debug_get_severity(VkDebugUtilsMessageSeverityFlagBitsEXT severity)
 {
 	if (severity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
-	{ return "SEVERITY_VERBOSE"; }
+	{
+		return "SEVERITY_VERBOSE";
+	}
 	else if (severity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
-	{ return "SEVERITY_INFO"; }
+	{
+		return "SEVERITY_INFO";
+	}
 	else if (severity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-	{ return "SEVERITY_WARNING"; }
+	{
+		return "SEVERITY_WARNING";
+	}
 	else if (severity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
-	{ return "SEVERITY_ERROR"; }
-	else
-	{ return "UNKNOWN SEVERITY TYPE"; }
+	{
+		return "SEVERITY_ERROR";
+	}
+	else { return "UNKNOWN SEVERITY TYPE"; }
 }
 
 char *vka_debug_get_type(VkDebugUtilsMessageTypeFlagsEXT type)
 {
-	if (type == VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
-	{ return "GENERAL"; }
-	if (type == VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
-	{ return "VALIDATION"; }
-	if (type == VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
-	{ return "PERFORMANCE"; }
-	else
-	{ return "UNKNOWN MESSAGE TYPE"; }
+	if (type == VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) { return "GENERAL"; }
+	if (type == VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) { return "VALIDATION"; }
+	if (type == VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) { return "PERFORMANCE"; }
+	else { return "UNKNOWN MESSAGE TYPE"; }
 }
 
-void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
+void vka_print_vulkan(FILE *file, vka_vulkan_t *vulkan)
 {
 	fprintf(file, "**************************\n");
 	fprintf(file, "* Vulkan base debug info *\n");
@@ -1285,13 +1685,13 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 
 	fprintf(file, "\n");
 
-	if (vulkan->instance == VK_NULL_HANDLE)
+	if (!vulkan->instance)
 	{
 		fprintf(file, "Instance\t\t\t\t= VK_NULL_HANDLE\n");
 	}
 	else { fprintf(file, "Instance\t\t\t\t= %p\n", vulkan->instance); }
 
-	if (vulkan->surface == VK_NULL_HANDLE)
+	if (!vulkan->surface)
 	{
 		fprintf(file, "Surface\t\t\t\t\t= VK_NULL_HANDLE\n");
 	}
@@ -1299,7 +1699,7 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 
 	fprintf(file, "\n");
 
-	if (vulkan->physical_device == VK_NULL_HANDLE)
+	if (!vulkan->physical_device)
 	{
 		fprintf(file, "Physical device\t\t\t\t= VK_NULL_HANDLE\n");
 	}
@@ -1315,7 +1715,7 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 			VK_API_VERSION_PATCH(properties.apiVersion));
 	}
 
-	if (vulkan->device == VK_NULL_HANDLE)
+	if (!vulkan->device)
 	{
 		fprintf(file, "Device\t\t\t\t\t= VK_NULL_HANDLE\n");
 	}
@@ -1323,13 +1723,13 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 
 	fprintf(file, "\n");
 
-	if (vulkan->graphics_queue == VK_NULL_HANDLE)
+	if (!vulkan->graphics_queue)
 	{
 		fprintf(file, "Queue: graphics\t\t\t\t= VK_NULL_HANDLE\n");
 	}
 	else { fprintf(file, "Queue: graphics\t\t\t\t= %p\n", vulkan->graphics_queue); }
 
-	if (vulkan->present_queue == VK_NULL_HANDLE)
+	if (!vulkan->present_queue)
 	{
 		fprintf(file, "Queue: present\t\t\t\t= VK_NULL_HANDLE\n");
 	}
@@ -1337,7 +1737,7 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 
 	fprintf(file, "\n");
 
-	if (vulkan->command_pool == VK_NULL_HANDLE)
+	if (!vulkan->command_pool)
 	{
 		fprintf(file, "Command pool\t\t\t\t= VK_NULL_HANDLE\n");
 	}
@@ -1347,7 +1747,7 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		fprintf(file, " ---> Command buffer %d\t\t\t= ", i);
-		if (vulkan->command_buffers[i] == VK_NULL_HANDLE)
+		if (!vulkan->command_buffers[i])
 		{
 			fprintf(file, "VK_NULL_HANDLE\n");
 		}
@@ -1358,7 +1758,7 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		fprintf(file, " ---> Command fence %d\t\t\t= ", i);
-		if (vulkan->command_fences[i] == VK_NULL_HANDLE)
+		if (!vulkan->command_fences[i])
 		{
 			fprintf(file, "VK_NULL_HANDLE\n");
 		}
@@ -1372,7 +1772,7 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		fprintf(file, " ---> \"Image available\" %d\t\t", i);
-		if (vulkan->image_available[i] == VK_NULL_HANDLE)
+		if (!vulkan->image_available[i])
 		{
 			fprintf(file, "= VK_NULL_HANDLE\n");
 		}
@@ -1382,7 +1782,7 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		fprintf(file, " ---> \"Render complete\" %d\t\t", i);
-		if (vulkan->render_complete[i] == VK_NULL_HANDLE)
+		if (!vulkan->render_complete[i])
 		{
 			fprintf(file, "= VK_NULL_HANDLE\n");
 		}
@@ -1393,7 +1793,7 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 
 	fprintf(file, "Swapchain: number of images\t\t= %d\n", vulkan->num_swapchain_images);
 
-	if (vulkan->swapchain == VK_NULL_HANDLE)
+	if (!vulkan->swapchain)
 	{
 		fprintf(file, "Swapchain\t\t\t\t= VK_NULL_HANDLE\n");
 	}
@@ -1409,7 +1809,7 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 		{
 			fprintf(file, " ---> Swapchain image %d\t\t\t= ", i);
-			if (vulkan->swapchain_images[i] == VK_NULL_HANDLE)
+			if (!vulkan->swapchain_images[i])
 			{
 				fprintf(file, "VK_NULL_HANDLE\n");
 			}
@@ -1430,7 +1830,7 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 		{
 			fprintf(file, " ---> Swapchain image view %d\t\t= ", i);
-			if (vulkan->swapchain_image_views[i] == VK_NULL_HANDLE)
+			if (!vulkan->swapchain_image_views[i])
 			{
 				fprintf(file, "VK_NULL_HANDLE\n");
 			}
@@ -1443,10 +1843,39 @@ void vka_vulkan_print(FILE *file, vka_vulkan_t *vulkan)
 
 	fprintf(file, "\n");
 
-	if (vulkan->debug_messenger == VK_NULL_HANDLE)
+	if (!vulkan->debug_messenger)
 	{
 		fprintf(file, "Debug messenger\t\t\t\t= VK_NULL_HANDLE\n");
 	}
 	else { fprintf(file, "Debug messenger\t\t\t\t= %p\n", vulkan->debug_messenger); }
+}
+
+void vka_print_pipeline(FILE *file, vka_pipeline_t *pipeline)
+{
+	fprintf(file, "******************************\n");
+	fprintf(file, "* Vulkan pipeline debug info *\n");
+	fprintf(file, "******************************\n");
+
+	fprintf(file, "Pipeline name: %s\n", pipeline->name);
+
+	fprintf(file, "\n");
+
+	if (!pipeline->layout) { fprintf(file, "Pipeline layout\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Pipeline layout\t\t\t\t= %p\n", pipeline->layout); }
+
+	if (!pipeline->pipeline) { fprintf(file, "Pipeline\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Pipeline\t\t\t\t= %p\n", pipeline->pipeline); }
+
+	char *shader_types[3] = { "Vertex shader:\t\t\t\t",
+				"Fragment shader:\t\t\t",
+				"Compute shader:\t\t\t\t" };
+	for (int i = 0; i < 3; i++)
+	{
+		if (!pipeline->shaders[i].shader)
+		{
+			fprintf(file, "%s= VK_NULL_HANDLE\n", shader_types[i]);
+		}
+		else { fprintf(file, "%s= %p\n", shader_types[i], pipeline->shaders[i].shader); }
+	}
 }
 #endif
