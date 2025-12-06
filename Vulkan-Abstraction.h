@@ -107,21 +107,21 @@ typedef struct
 	uint32_t offsets[VKA_MAX_VERTEX_ATTRIBUTES];
 
 	// Input assembly:
-	VkPrimitiveTopology topology;
+	VkPrimitiveTopology topology;	// Default VK_PRIMITIVE_TOPOLOGY_POINT_LIST.
 
 	// Rasterisation:
-	VkPolygonMode polygon_mode;
-	VkCullModeFlags cull_mode;
-	float line_width;
+	VkPolygonMode polygon_mode;	// Default VK_POLYGON_MODE_FILL.
+	VkCullModeFlags cull_mode;	// Default VK_CULL_MODE_NONE.
+	float line_width;		// Default and minimum 1.f.
 
 	// TODO multisampling.
 	// TODO depth stencil.
 
 	// Blend:
-	VkBool32 blend_enable;
-	VkBlendOp colour_blend_op;
+	VkBool32 blend_enable;		// Default VK_FALSE.
+	VkBlendOp colour_blend_op;	// Default VK_BLEND_OP_ADD.
 	VkBlendOp alpha_blend_op;
-	VkColorComponentFlags colour_write_mask;
+	VkColorComponentFlags colour_write_mask; // If 0, gets set to RGBA for graphics pipelines.
 } vka_pipeline_config_t;
 
 typedef struct
@@ -150,14 +150,11 @@ int vka_create_command_fences(vka_vulkan_t *vulkan);
 int vka_create_semaphores(vka_vulkan_t *vulkan);
 int vka_create_swapchain(vka_vulkan_t *vulkan);
 
-// Pipelines:
+// Pipelines and shaders:
 int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
 void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
 void vka_bind_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
-
-// Shaders:
-int vka_create_shader_module(vka_vulkan_t *vulkan, vka_shader_t *shader);
-void vka_destroy_shader_module(vka_vulkan_t *vulkan, vka_shader_t *shader);
+int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader);
 
 // Utility:
 void vka_device_wait_idle(vka_vulkan_t *vulkan);

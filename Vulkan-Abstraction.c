@@ -1108,7 +1108,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	if (pipeline->config.is_compute_pipeline)
 	{
 		vka_shader_t *c_shader = &(pipeline->shaders[VKA_SHADER_TYPE_COMPUTE]);
-		if (!c_shader->shader && vka_create_shader_module(vulkan, c_shader)) { return -1; }
+		if (!c_shader->shader && vka_create_shader(vulkan, c_shader)) { return -1; }
 
 		VkPipelineShaderStageCreateInfo c_shader_stage_info;
 		memset(&c_shader_stage_info, 0, sizeof(c_shader_stage_info));
@@ -1130,13 +1130,21 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		c_pipeline_info.basePipelineHandle	= NULL;
 		c_pipeline_info.basePipelineIndex	= 0;
 
+		// Create a temporary pipeline in case this doesn't work out:
+		VkPipeline c_temp = VK_NULL_HANDLE;
 		if (vkCreateComputePipelines(vulkan->device, VK_NULL_HANDLE, 1, &c_pipeline_info,
-						NULL, &(pipeline->pipeline)) != VK_SUCCESS)
+								NULL, &c_temp) != VK_SUCCESS)
 		{
 			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 				"Could not create compute pipeline \"%s\".", pipeline->name);
 			return -1;
 		}
+
+		if (pipeline->pipeline)
+		{
+			vkDestroyPipeline(vulkan->device, pipeline->pipeline, NULL);
+		}
+		pipeline->pipeline = c_temp;
 
 		return 0;
 	}
@@ -1170,7 +1178,13 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		}
 	}
 	if (pipeline->config.line_width < 1.f) { pipeline->config.line_width = 1.f; }
-	// TODO - colour write mask?
+	if (!pipeline->config.colour_write_mask)
+	{
+		pipeline->config.colour_write_mask = VK_COLOR_COMPONENT_R_BIT |
+							VK_COLOR_COMPONENT_G_BIT |
+							VK_COLOR_COMPONENT_B_BIT |
+							VK_COLOR_COMPONENT_A_BIT;
+	}
 
 	uint32_t stage_count = 2;
 	vka_shader_t *shaders[2] = { &(pipeline->shaders[VKA_SHADER_TYPE_VERTEX]),
@@ -1182,10 +1196,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	memset(shader_stages, 0, stage_count * sizeof(shader_stages[0]));
 	for (uint32_t i = 0; i < stage_count; i++)
 	{
-		if (!shaders[i]->shader && vka_create_shader_module(vulkan, shaders[i]))
-		{
-			return -1;
-		}
+		if (!shaders[i]->shader && vka_create_shader(vulkan, shaders[i])) { return -1; }
 
 		shader_stages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		shader_stages[i].pNext			= NULL;
@@ -1385,13 +1396,18 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	pipeline_info.basePipelineHandle	= VK_NULL_HANDLE;
 	pipeline_info.basePipelineIndex		= 0;
 
+	// Create a temporary pipeline in case this doesn't work out:
+	VkPipeline temp = VK_NULL_HANDLE;
 	if (vkCreateGraphicsPipelines(vulkan->device, VK_NULL_HANDLE, 1,
-		&pipeline_info, NULL, &(pipeline->pipeline)) != VK_SUCCESS)
+			&pipeline_info, NULL, &temp) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not create pipeline \"%s\".", pipeline->name);
 		return -1;
 	}
+
+	if (pipeline->pipeline) { vkDestroyPipeline(vulkan->device, pipeline->pipeline, NULL); }
+	pipeline->pipeline = temp;
 
 	return 0;
 }
@@ -1404,7 +1420,14 @@ void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		pipeline->pipeline = VK_NULL_HANDLE;
 	}
 
-	for (int i = 0; i < 3; i++) { vka_destroy_shader_module(vulkan, &(pipeline->shaders[i])); }
+	for (int i = 0; i < 3; i++)
+	{
+		if (pipeline->shaders[i].shader)
+		{
+			vkDestroyShaderModule(vulkan->device, pipeline->shaders[i].shader, NULL);
+			pipeline->shaders[i].shader = VK_NULL_HANDLE;
+		}
+	}
 
 	if (pipeline->layout)
 	{
@@ -1429,7 +1452,7 @@ void vka_bind_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
  * Shaders *
  ***********/
 
-int vka_create_shader_module(vka_vulkan_t *vulkan, vka_shader_t *shader)
+int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
 {
 	FILE *shader_file = fopen(shader->path, "rb");
 	if (!shader_file)
@@ -1503,20 +1526,11 @@ int vka_create_shader_module(vka_vulkan_t *vulkan, vka_shader_t *shader)
 		return -1;
 	}
 
-	vka_destroy_shader_module(vulkan, shader);
+	if (shader->shader) { vkDestroyShaderModule(vulkan->device, shader->shader, NULL); }
 	shader->shader = temp;
 
 	free(shader_code);
 	return 0;
-}
-
-void vka_destroy_shader_module(vka_vulkan_t *vulkan, vka_shader_t *shader)
-{
-	if (shader->shader)
-	{
-		vkDestroyShaderModule(vulkan->device, shader->shader, NULL);
-		shader->shader = VK_NULL_HANDLE;
-	}
 }
 
 /***********
@@ -1907,6 +1921,28 @@ void vka_print_pipeline(FILE *file, vka_pipeline_t *pipeline)
 	fprintf(file, "Compute pipeline: ");
 	if (pipeline->config.is_compute_pipeline) { fprintf(file, "Yes\n"); }
 	else { fprintf(file, "No\n"); }
+	fprintf(file, "Colour write mask: ");
+	if (!pipeline->config.colour_write_mask) { fprintf(file, "None\n"); }
+	else
+	{
+		if (pipeline->config.colour_write_mask & VK_COLOR_COMPONENT_R_BIT)
+		{
+			fprintf(file, "R");
+		}
+		if (pipeline->config.colour_write_mask & VK_COLOR_COMPONENT_G_BIT)
+		{
+			fprintf(file, "G");
+		}
+		if (pipeline->config.colour_write_mask & VK_COLOR_COMPONENT_B_BIT)
+		{
+			fprintf(file, "B");
+		}
+		if (pipeline->config.colour_write_mask & VK_COLOR_COMPONENT_A_BIT)
+		{
+			fprintf(file, "A");
+		}
+		fprintf(file, "\n");
+	}
 
 	fprintf(file, "\n");
 
