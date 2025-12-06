@@ -15,16 +15,32 @@ For debug, define VKA_DEBUG when compiling.
     - Swapchain + images/image views
     - Debug messenger (only when VKA_DEBUG is defined)
 
-VKA\_MAX\_FRAMES\_IN\_FLIGHT set to 2 by default - this can be overridden in the Makefile.
+## Functionality in progress:
+
+- Pipelines
+- Shader modules
 
 ## Compilation:
 
-Depends on [Config](https://github.com/Nell-Mills/Config). File expected: NM-Config/Config.h. Add this to Include directory.  
-Add Include directory to search path: -I Include  
-Add Libs to library search path: -L Libs -Wl,-rpath '$$ORIGIN/Libs'  
+Depends on:
+
+- [Config](https://github.com/Nell-Mills/Config) - expects <NM-Config/Config.h\>
+- Volk (included)
+- SDL3
+
+Add "Include" to search path: "-I Include"  
 Link SDL3: -lSDL3
 
 ## Usage:
 
-Populate a vka\_vulkan\_t struct with configuration - see the vka\_vulkan\_config\_t struct.  
-Use vka\_setup\_vulkan() and vka\_shutdown_\vulkan().  
+Generally follow this pattern:
+
+- For the main Vulkan base struct (vka\_vulkan\_t), populate its .config member (optional), then use vka\_setup\_vulkan() and vka\_shutdown\_vulkan().
+
+- For other structs (vka\_X\_t), there will be vka\_create\_X and vka\_destroy\_X functions, and a .config member for you to populate (again, optional).
+
+Structs available:
+
+- vka\_vulkan\_t: Device, queues, command buffers, semaphores, swapchain and debug messenger
+
+- vka\_pipeline\_t: Pipeline layout, pipeline, shader modules (note - config references descriptor set layouts, but doesn't manage them)

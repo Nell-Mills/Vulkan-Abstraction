@@ -92,6 +92,8 @@ typedef struct
 
 typedef struct
 {
+	int is_compute_pipeline;
+
 	// Note - descriptor set layouts are managed OUTSIDE the pipeline:
 	uint32_t num_descriptor_set_layouts;
 	VkDescriptorSetLayout *descriptor_set_layouts;

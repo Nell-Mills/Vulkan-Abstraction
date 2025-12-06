@@ -6,9 +6,7 @@
 
 int vka_setup_vulkan(vka_vulkan_t *vulkan)
 {
-	/* Set up default values. Enabling these features by default:
-	 * Multi draw indirect, descriptor indexing, draw indirect count,
-	 * runtime descriptor array and dynamic rendering. */
+	// Set up default values and enable default features:
 	if (!strcmp(vulkan->name, "")) { strcpy(vulkan->name, "Vulkan Application"); }
 	if (vulkan->config.minimum_width < 640) { vulkan->config.minimum_width = 640; }
 	if (vulkan->config.minimum_height < 480) { vulkan->config.minimum_height = 480; }
@@ -1106,47 +1104,96 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		}
 	}
 
-	if (pipeline->config.line_width < 1.f) { pipeline->config.line_width = 1.f; }
-
-	for (uint32_t i = 0; i < pipeline->config.num_vertex_attributes; i++)
+	// Check for compute pipeline:
+	if (pipeline->config.is_compute_pipeline)
 	{
-		if (pipeline->config.formats[i] == VK_FORMAT_UNDEFINED)
+		vka_shader_t *c_shader = &(pipeline->shaders[VKA_SHADER_TYPE_COMPUTE]);
+		if (!c_shader->shader && vka_create_shader_module(vulkan, c_shader)) { return -1; }
+
+		VkPipelineShaderStageCreateInfo c_shader_stage_info;
+		memset(&c_shader_stage_info, 0, sizeof(c_shader_stage_info));
+		c_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		c_shader_stage_info.pNext		= NULL;
+		c_shader_stage_info.flags		= 0;
+		c_shader_stage_info.stage		= VK_SHADER_STAGE_COMPUTE_BIT;
+		c_shader_stage_info.module		= c_shader->shader;
+		c_shader_stage_info.pName		= "main";
+		c_shader_stage_info.pSpecializationInfo	= NULL;
+
+		VkComputePipelineCreateInfo c_pipeline_info;
+		memset(&c_pipeline_info, 0, sizeof(c_pipeline_info));
+		c_pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+		c_pipeline_info.pNext			= NULL;
+		c_pipeline_info.flags			= 0;
+		c_pipeline_info.stage			= c_shader_stage_info;
+		c_pipeline_info.layout			= pipeline->layout;
+		c_pipeline_info.basePipelineHandle	= NULL;
+		c_pipeline_info.basePipelineIndex	= 0;
+
+		if (vkCreateComputePipelines(vulkan->device, VK_NULL_HANDLE, 1, &c_pipeline_info,
+						NULL, &(pipeline->pipeline)) != VK_SUCCESS)
 		{
 			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-				"Vertex attribute format %u for pipeline \"%s\" has no format.",
+				"Could not create compute pipeline \"%s\".", pipeline->name);
+			return -1;
+		}
+
+		return 0;
+	}
+
+	// Validate config values:
+	for (uint32_t i = 0; i < pipeline->config.num_vertex_bindings; i++)
+	{
+		if (pipeline->config.strides[i] == 0)
+		{
+			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+				"Vertex binding stride %u for pipeline \"%s\" is zero.",
 				i, pipeline->name);
 			return -1;
 		}
 	}
-
-	VkShaderStageFlagBits stage_flags[3] = { VK_SHADER_STAGE_VERTEX_BIT,
-						VK_SHADER_STAGE_FRAGMENT_BIT,
-						VK_SHADER_STAGE_COMPUTE_BIT };
-	int num_shader_stages = 0;
-	VkPipelineShaderStageCreateInfo shader_stages[3];
-	memset(shader_stages, 0, 3 * sizeof(shader_stages[0]));
-	for (int i = 0; i < 3; i++)
+	for (uint32_t i = 0; i < pipeline->config.num_vertex_attributes; i++)
 	{
-		if (pipeline->shaders[i].shader)
+		if (pipeline->config.bindings[i] >= pipeline->config.num_vertex_bindings)
 		{
-			shader_stages[num_shader_stages].sType =
-				VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			shader_stages[num_shader_stages].pNext			= NULL;
-			shader_stages[num_shader_stages].flags			= 0;
-			shader_stages[num_shader_stages].stage			= stage_flags[i];
-			shader_stages[num_shader_stages].module = pipeline->shaders[i].shader;
-			shader_stages[num_shader_stages].pName			= "main";
-			shader_stages[num_shader_stages].pSpecializationInfo	= NULL;
-
-			num_shader_stages++;
+			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+				"Vertex attribute binding %u for pipeline \"%s\" is out of bounds.",
+				i, pipeline->name);
+			return -1;
+		}
+		if (pipeline->config.formats[i] == VK_FORMAT_UNDEFINED)
+		{
+			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+				"Vertex attribute %u for pipeline \"%s\" has no format.",
+				i, pipeline->name);
+			return -1;
 		}
 	}
+	if (pipeline->config.line_width < 1.f) { pipeline->config.line_width = 1.f; }
+	// TODO - colour write mask?
 
-	if (!num_shader_stages)
+	uint32_t stage_count = 2;
+	vka_shader_t *shaders[2] = { &(pipeline->shaders[VKA_SHADER_TYPE_VERTEX]),
+					&(pipeline->shaders[VKA_SHADER_TYPE_FRAGMENT]) };
+	VkShaderStageFlagBits stage_flags[2] = { VK_SHADER_STAGE_VERTEX_BIT,
+						VK_SHADER_STAGE_FRAGMENT_BIT };
+
+	VkPipelineShaderStageCreateInfo shader_stages[stage_count];
+	memset(shader_stages, 0, stage_count * sizeof(shader_stages[0]));
+	for (uint32_t i = 0; i < stage_count; i++)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Pipeline \"%s\" has no shader stages.", pipeline->name);
-		return -1;
+		if (!shaders[i]->shader && vka_create_shader_module(vulkan, shaders[i]))
+		{
+			return -1;
+		}
+
+		shader_stages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		shader_stages[i].pNext			= NULL;
+		shader_stages[i].flags			= 0;
+		shader_stages[i].stage			= stage_flags[i];
+		shader_stages[i].module			= shaders[i]->shader;
+		shader_stages[i].pName			= "main";
+		shader_stages[i].pSpecializationInfo	= NULL;
 	}
 
 	// Vertex input:
@@ -1304,7 +1351,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	dynamic_state_info.dynamicStateCount	= 2;
 	dynamic_state_info.pDynamicStates	= dynamic_state;
 
-	// Rendering (TODO - account for compute pipelines):
+	// Rendering:
 	VkPipelineRenderingCreateInfo pipeline_rendering_info;
 	memset(&pipeline_rendering_info, 0, sizeof(pipeline_rendering_info));
 	pipeline_rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
@@ -1321,7 +1368,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	pipeline_info.sType			= VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 	pipeline_info.pNext			= &pipeline_rendering_info;
 	pipeline_info.flags			= 0;
-	pipeline_info.stageCount		= num_shader_stages;
+	pipeline_info.stageCount		= stage_count;
 	pipeline_info.pStages			= shader_stages;
 	pipeline_info.pVertexInputState		= &input_info;
 	pipeline_info.pInputAssemblyState	= &assembly_info;
@@ -1857,6 +1904,9 @@ void vka_print_pipeline(FILE *file, vka_pipeline_t *pipeline)
 	fprintf(file, "******************************\n");
 
 	fprintf(file, "Pipeline name: %s\n", pipeline->name);
+	fprintf(file, "Compute pipeline: ");
+	if (pipeline->config.is_compute_pipeline) { fprintf(file, "Yes\n"); }
+	else { fprintf(file, "No\n"); }
 
 	fprintf(file, "\n");
 
