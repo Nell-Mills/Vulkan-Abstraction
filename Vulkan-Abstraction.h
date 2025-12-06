@@ -29,25 +29,20 @@
 
 typedef struct
 {
-	int minimum_width;
-	int minimum_height;
+	char name[NM_MAX_NAME_LENGTH];
+	VkCommandBuffer buffer;
+	VkFence fence;
 
-	// Feature requirements (after device creation, these represent enabled features):
-	VkPhysicalDeviceFeatures enabled_features;
-	VkPhysicalDeviceVulkan11Features enabled_features_11;
-	VkPhysicalDeviceVulkan12Features enabled_features_12;
-	VkPhysicalDeviceVulkan13Features enabled_features_13;
+	/*****************
+	 * Configuration *
+	 *****************/
 
-	// Limits:
-	VkDeviceSize max_memory_allocation_size;
-	int max_sampler_descriptors;
-} vka_vulkan_config_t;
+	uint8_t fence_signaled;
+} vka_command_buffer_t;
 
 typedef struct
 {
 	char name[NM_MAX_NAME_LENGTH];
-	vka_vulkan_config_t config;
-
 	SDL_Window *window;
 	VkInstance instance;
 	VkSurfaceKHR surface;
@@ -60,8 +55,7 @@ typedef struct
 	VkQueue present_queue;
 
 	VkCommandPool command_pool;
-	VkCommandBuffer command_buffers[VKA_MAX_FRAMES_IN_FLIGHT];
-	VkFence command_fences[VKA_MAX_FRAMES_IN_FLIGHT];
+	vka_command_buffer_t command_buffers[VKA_MAX_FRAMES_IN_FLIGHT];
 
 	VkSemaphore image_available[VKA_MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore render_complete[VKA_MAX_FRAMES_IN_FLIGHT];
@@ -82,6 +76,22 @@ typedef struct
 	#ifdef VKA_DEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
 	#endif
+
+	/*****************
+	 * Configuration *
+	 *****************/
+	int minimum_window_width;
+	int minimum_window_height;
+
+	// Feature requirements (after device creation, these represent enabled features):
+	VkPhysicalDeviceFeatures enabled_features;
+	VkPhysicalDeviceVulkan11Features enabled_features_11;
+	VkPhysicalDeviceVulkan12Features enabled_features_12;
+	VkPhysicalDeviceVulkan13Features enabled_features_13;
+
+	// Limits:
+	VkDeviceSize max_memory_allocation_size;
+	int max_sampler_descriptors;
 } vka_vulkan_t;
 
 typedef struct
@@ -92,9 +102,19 @@ typedef struct
 
 typedef struct
 {
+	char name[NM_MAX_NAME_LENGTH];
+	VkPipelineLayout layout;
+	VkPipeline pipeline;
+	vka_shader_t shaders[3];
+
+	/*****************
+	 * Configuration *
+	 *****************/
 	int is_compute_pipeline;
 
-	// Note - descriptor set layouts are managed OUTSIDE the pipeline:
+	/* Note - actual descriptor set layouts are managed OUTSIDE the
+	 * pipeline, but this array is freed by vka_destroy_pipeline().
+	 * Allocate it outside the pipeline as well. */
 	uint32_t num_descriptor_set_layouts;
 	VkDescriptorSetLayout *descriptor_set_layouts;
 
@@ -122,16 +142,6 @@ typedef struct
 	VkBlendOp colour_blend_op;	// Default VK_BLEND_OP_ADD.
 	VkBlendOp alpha_blend_op;
 	VkColorComponentFlags colour_write_mask; // If 0, gets set to RGBA for graphics pipelines.
-} vka_pipeline_config_t;
-
-typedef struct
-{
-	char name[NM_MAX_NAME_LENGTH];
-	vka_pipeline_config_t config;
-
-	VkPipelineLayout layout;
-	VkPipeline pipeline;
-	vka_shader_t shaders[3];
 } vka_pipeline_t;
 
 // Main Vulkan base:
@@ -153,8 +163,19 @@ int vka_create_swapchain(vka_vulkan_t *vulkan);
 // Pipelines and shaders:
 int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
 void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
-void vka_bind_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
+void vka_bind_pipeline(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
+							vka_pipeline_t *pipeline);
 int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader);
+
+// Command buffers and fences:
+int vka_create_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
+void vka_destroy_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
+int vka_begin_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
+								VkSemaphore semaphore);
+int vka_end_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
+int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
+	VkQueue queue, VkSemaphore *wait_semaphore, VkSemaphore *signal_semaphore);
+int vka_wait_for_fence(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 
 // Utility:
 void vka_device_wait_idle(vka_vulkan_t *vulkan);

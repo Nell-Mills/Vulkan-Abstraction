@@ -8,28 +8,25 @@ int vka_setup_vulkan(vka_vulkan_t *vulkan)
 {
 	// Set up default values and enable default features:
 	if (!strcmp(vulkan->name, "")) { strcpy(vulkan->name, "Vulkan Application"); }
-	if (vulkan->config.minimum_width < 640) { vulkan->config.minimum_width = 640; }
-	if (vulkan->config.minimum_height < 480) { vulkan->config.minimum_height = 480; }
+	if (vulkan->minimum_window_width < 640) { vulkan->minimum_window_width = 640; }
+	if (vulkan->minimum_window_height < 480) { vulkan->minimum_window_height = 480; }
 
-	vulkan->config.enabled_features.multiDrawIndirect = VK_TRUE;
+	vulkan->enabled_features.multiDrawIndirect = VK_TRUE;
 
-	vulkan->config.enabled_features_11.sType =
-		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+	vulkan->enabled_features_11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
 
-	vulkan->config.enabled_features_12.sType =
-		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-	vulkan->config.enabled_features_12.pNext = &(vulkan->config.enabled_features_11);
-	vulkan->config.enabled_features_12.descriptorIndexing = VK_TRUE;
-	vulkan->config.enabled_features_12.drawIndirectCount = VK_TRUE;
-	vulkan->config.enabled_features_12.runtimeDescriptorArray = VK_TRUE;
+	vulkan->enabled_features_12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+	vulkan->enabled_features_12.pNext = &(vulkan->enabled_features_11);
+	vulkan->enabled_features_12.descriptorIndexing = VK_TRUE;
+	vulkan->enabled_features_12.drawIndirectCount = VK_TRUE;
+	vulkan->enabled_features_12.runtimeDescriptorArray = VK_TRUE;
 
-	vulkan->config.enabled_features_13.sType =
-		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-	vulkan->config.enabled_features_13.pNext = &(vulkan->config.enabled_features_12);
-	vulkan->config.enabled_features_13.dynamicRendering = VK_TRUE;
+	vulkan->enabled_features_13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+	vulkan->enabled_features_13.pNext = &(vulkan->enabled_features_12);
+	vulkan->enabled_features_13.dynamicRendering = VK_TRUE;
 
-	vulkan->config.max_memory_allocation_size = 1073741824;
-	vulkan->config.max_sampler_descriptors = 1024;
+	vulkan->max_memory_allocation_size = 1073741824;
+	vulkan->max_sampler_descriptors = 1024;
 	vulkan->graphics_family_index = 100;
 	vulkan->present_family_index = 100;
 	vulkan->swapchain_format = VK_FORMAT_UNDEFINED;
@@ -51,7 +48,6 @@ int vka_setup_vulkan(vka_vulkan_t *vulkan)
 	if (vka_create_device(vulkan)) { return -1; }
 	if (vka_create_command_pool(vulkan)) { return -1; }
 	if (vka_create_command_buffers(vulkan)) { return -1; }
-	if (vka_create_command_fences(vulkan)) { return -1; }
 	if (vka_create_semaphores(vulkan)) { return -1; }
 	if (vka_create_swapchain(vulkan)) { return -1; }
 	vulkan->recreate_pipelines = 0;
@@ -104,15 +100,6 @@ void vka_shutdown_vulkan(vka_vulkan_t *vulkan)
 		}
 	}
 
-	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
-	{
-		if (vulkan->command_fences[i])
-		{
-			vkDestroyFence(vulkan->device, vulkan->command_fences[i], NULL);
-			vulkan->command_fences[i] = VK_NULL_HANDLE;
-		}
-	}
-
 	if (vulkan->command_pool)
 	{
 		vkDestroyCommandPool(vulkan->device, vulkan->command_pool, NULL);
@@ -121,7 +108,7 @@ void vka_shutdown_vulkan(vka_vulkan_t *vulkan)
 
 	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		vulkan->command_buffers[i] = VK_NULL_HANDLE;
+		vka_destroy_command_buffer(vulkan, &(vulkan->command_buffers[i]));
 	}
 
 	if (vulkan->device)
@@ -164,9 +151,8 @@ int vka_create_window(vka_vulkan_t *vulkan)
 		return -1;
 	}
 
-	vulkan->window = SDL_CreateWindow(vulkan->name,
-		vulkan->config.minimum_width, vulkan->config.minimum_height,
-		SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+	vulkan->window = SDL_CreateWindow(vulkan->name, vulkan->minimum_window_width,
+		vulkan->minimum_window_height, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 	if (!vulkan->window)
 	{
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
@@ -181,8 +167,8 @@ int vka_create_window(vka_vulkan_t *vulkan)
 		return -1;
 	}
 
-	if (SDL_SetWindowMinimumSize(vulkan->window, vulkan->config.minimum_width,
-					vulkan->config.minimum_height) != true)
+	if (SDL_SetWindowMinimumSize(vulkan->window, vulkan->minimum_window_width,
+					vulkan->minimum_window_height) != true)
 	{
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not set window minimum size -> %s.", SDL_GetError());
@@ -332,8 +318,8 @@ int vka_create_device(vka_vulkan_t *vulkan)
 			vulkan->physical_device = physical_devices[i];
 			vulkan->graphics_family_index = graphics_family_index;
 			vulkan->present_family_index = present_family_index;
-			vulkan->config.max_memory_allocation_size = max_memory_allocation_size;
-			vulkan->config.enabled_features.samplerAnisotropy = sampler_anisotropy;
+			vulkan->max_memory_allocation_size = max_memory_allocation_size;
+			vulkan->enabled_features.samplerAnisotropy = sampler_anisotropy;
 		}
 	}
 
@@ -386,8 +372,8 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	VkPhysicalDeviceFeatures2 enabled_features;
 	memset(&enabled_features, 0, sizeof(enabled_features));
 	enabled_features.sType		= VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-	enabled_features.pNext		= &(vulkan->config.enabled_features_13);
-	enabled_features.features	= vulkan->config.enabled_features;
+	enabled_features.pNext		= &(vulkan->enabled_features_13);
+	enabled_features.features	= vulkan->enabled_features;
 
 	char *enabled_extensions[1] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
@@ -546,18 +532,18 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	if (*sampler_anisotropy == VK_TRUE) { score += 2; }
 
 	// Compare desired features with supported features, bitwise (exclude anisotropy):
-	VkPhysicalDeviceFeatures desired_features = vulkan->config.enabled_features;
+	VkPhysicalDeviceFeatures desired_features = vulkan->enabled_features;
 	desired_features.samplerAnisotropy = VK_FALSE;
 
-	VkPhysicalDeviceVulkan11Features desired_features_11 = vulkan->config.enabled_features_11;
+	VkPhysicalDeviceVulkan11Features desired_features_11 = vulkan->enabled_features_11;
 	desired_features_11.pNext = NULL;
 	supported_features_11.pNext = NULL;
 
-	VkPhysicalDeviceVulkan12Features desired_features_12 = vulkan->config.enabled_features_12;
+	VkPhysicalDeviceVulkan12Features desired_features_12 = vulkan->enabled_features_12;
 	desired_features_12.pNext = NULL;
 	supported_features_12.pNext = NULL;
 
-	VkPhysicalDeviceVulkan13Features desired_features_13 = vulkan->config.enabled_features_13;
+	VkPhysicalDeviceVulkan13Features desired_features_13 = vulkan->enabled_features_13;
 	desired_features_13.pNext = NULL;
 	supported_features_13.pNext = NULL;
 
@@ -710,43 +696,8 @@ int vka_create_command_buffers(vka_vulkan_t *vulkan)
 {
 	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		VkCommandBufferAllocateInfo alloc_info;
-		memset(&alloc_info, 0, sizeof(alloc_info));
-		alloc_info.sType		= VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		alloc_info.pNext		= NULL;
-		alloc_info.commandPool		= vulkan->command_pool;
-		alloc_info.level		= VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		alloc_info.commandBufferCount	= 1;
-
-		if (vkAllocateCommandBuffers(vulkan->device, &alloc_info,
-			&(vulkan->command_buffers[i])) != VK_SUCCESS)
-		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-				"Could not allocate command buffer.");
-			return -1;
-		}
-	}
-
-	return 0;
-}
-
-int vka_create_command_fences(vka_vulkan_t *vulkan)
-{
-	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
-	{
-		VkFenceCreateInfo fence_info;
-		memset(&fence_info, 0, sizeof(fence_info));
-		fence_info.sType	= VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-		fence_info.pNext	= NULL;
-		fence_info.flags	= VK_FENCE_CREATE_SIGNALED_BIT;
-
-		if (vkCreateFence(vulkan->device, &fence_info, NULL,
-			&(vulkan->command_fences[i])) != VK_SUCCESS)
-		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-						"Could not create fence.");
-			return -1;
-		}
+		snprintf(vulkan->command_buffers[i].name, NM_MAX_NAME_LENGTH, "Vulkan Base %u", i);
+		if (vka_create_command_buffer(vulkan, &(vulkan->command_buffers[i]))) { return -1; }
 	}
 
 	return 0;
@@ -1077,9 +1028,9 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	return 0;
 }
 
-/*************
- * Pipelines *
- *************/
+/*************************
+ * Pipelines and shaders *
+ *************************/
 
 int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 {
@@ -1090,8 +1041,8 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipeline_layout_info.pNext			= NULL;
 		pipeline_layout_info.flags			= 0;
-		pipeline_layout_info.setLayoutCount = pipeline->config.num_descriptor_set_layouts;
-		pipeline_layout_info.pSetLayouts = pipeline->config.descriptor_set_layouts;
+		pipeline_layout_info.setLayoutCount = pipeline->num_descriptor_set_layouts;
+		pipeline_layout_info.pSetLayouts		= pipeline->descriptor_set_layouts;
 		pipeline_layout_info.pushConstantRangeCount	= 0;
 		pipeline_layout_info.pPushConstantRanges	= NULL;
 
@@ -1105,7 +1056,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	}
 
 	// Check for compute pipeline:
-	if (pipeline->config.is_compute_pipeline)
+	if (pipeline->is_compute_pipeline)
 	{
 		vka_shader_t *c_shader = &(pipeline->shaders[VKA_SHADER_TYPE_COMPUTE]);
 		if (!c_shader->shader && vka_create_shader(vulkan, c_shader)) { return -1; }
@@ -1150,9 +1101,9 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	}
 
 	// Validate config values:
-	for (uint32_t i = 0; i < pipeline->config.num_vertex_bindings; i++)
+	for (uint32_t i = 0; i < pipeline->num_vertex_bindings; i++)
 	{
-		if (pipeline->config.strides[i] == 0)
+		if (pipeline->strides[i] == 0)
 		{
 			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 				"Vertex binding stride %u for pipeline \"%s\" is zero.",
@@ -1160,16 +1111,16 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 			return -1;
 		}
 	}
-	for (uint32_t i = 0; i < pipeline->config.num_vertex_attributes; i++)
+	for (uint32_t i = 0; i < pipeline->num_vertex_attributes; i++)
 	{
-		if (pipeline->config.bindings[i] >= pipeline->config.num_vertex_bindings)
+		if (pipeline->bindings[i] >= pipeline->num_vertex_bindings)
 		{
 			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 				"Vertex attribute binding %u for pipeline \"%s\" is out of bounds.",
 				i, pipeline->name);
 			return -1;
 		}
-		if (pipeline->config.formats[i] == VK_FORMAT_UNDEFINED)
+		if (pipeline->formats[i] == VK_FORMAT_UNDEFINED)
 		{
 			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 				"Vertex attribute %u for pipeline \"%s\" has no format.",
@@ -1177,13 +1128,13 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 			return -1;
 		}
 	}
-	if (pipeline->config.line_width < 1.f) { pipeline->config.line_width = 1.f; }
-	if (!pipeline->config.colour_write_mask)
+	if (pipeline->line_width < 1.f) { pipeline->line_width = 1.f; }
+	if (!pipeline->colour_write_mask)
 	{
-		pipeline->config.colour_write_mask = VK_COLOR_COMPONENT_R_BIT |
-							VK_COLOR_COMPONENT_G_BIT |
-							VK_COLOR_COMPONENT_B_BIT |
-							VK_COLOR_COMPONENT_A_BIT;
+		pipeline->colour_write_mask = VK_COLOR_COMPONENT_R_BIT |
+						VK_COLOR_COMPONENT_G_BIT |
+						VK_COLOR_COMPONENT_B_BIT |
+						VK_COLOR_COMPONENT_A_BIT;
 	}
 
 	uint32_t stage_count = 2;
@@ -1210,21 +1161,21 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	// Vertex input:
 	VkVertexInputBindingDescription vertex_bindings[VKA_MAX_VERTEX_ATTRIBUTES];
 	memset(vertex_bindings, 0, VKA_MAX_VERTEX_ATTRIBUTES * sizeof(vertex_bindings[0]));
-	for (uint32_t i = 0; i < pipeline->config.num_vertex_bindings; i++)
+	for (uint32_t i = 0; i < pipeline->num_vertex_bindings; i++)
 	{
 		vertex_bindings[i].binding	= i;
-		vertex_bindings[i].stride	= pipeline->config.strides[i];
+		vertex_bindings[i].stride	= pipeline->strides[i];
 		vertex_bindings[i].inputRate	= VK_VERTEX_INPUT_RATE_VERTEX;
 	}
 
 	VkVertexInputAttributeDescription vertex_attributes[VKA_MAX_VERTEX_ATTRIBUTES];
 	memset(vertex_attributes, 0, VKA_MAX_VERTEX_ATTRIBUTES * sizeof(vertex_attributes[0]));
-	for (uint32_t i = 0; i < pipeline->config.num_vertex_attributes; i++)
+	for (uint32_t i = 0; i < pipeline->num_vertex_attributes; i++)
 	{
 		vertex_attributes[i].location	= i;
-		vertex_attributes[i].binding	= pipeline->config.bindings[i];
-		vertex_attributes[i].format	= pipeline->config.formats[i];
-		vertex_attributes[i].offset	= pipeline->config.offsets[i];
+		vertex_attributes[i].binding	= pipeline->bindings[i];
+		vertex_attributes[i].format	= pipeline->formats[i];
+		vertex_attributes[i].offset	= pipeline->offsets[i];
 	}
 
 	VkPipelineVertexInputStateCreateInfo input_info;
@@ -1232,9 +1183,9 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 	input_info.pNext				= NULL;
 	input_info.flags				= 0;
-	input_info.vertexBindingDescriptionCount	= pipeline->config.num_vertex_bindings;
+	input_info.vertexBindingDescriptionCount	= pipeline->num_vertex_bindings;
 	input_info.pVertexBindingDescriptions		= vertex_bindings;
-	input_info.vertexAttributeDescriptionCount	= pipeline->config.num_vertex_attributes;
+	input_info.vertexAttributeDescriptionCount	= pipeline->num_vertex_attributes;
 	input_info.pVertexAttributeDescriptions		= vertex_attributes;
 
 	// Input assembly:
@@ -1244,7 +1195,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	assembly_info.pNext			= NULL;
 	assembly_info.flags			= 0;
 	assembly_info.primitiveRestartEnable	= VK_FALSE;
-	assembly_info.topology			= pipeline->config.topology;
+	assembly_info.topology			= pipeline->topology;
 
 	// Viewport (will be using dynamic state):
 	VkViewport viewport;
@@ -1270,14 +1221,14 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	rasterization_info.flags			= 0;
 	rasterization_info.depthClampEnable		= VK_FALSE;
 	rasterization_info.rasterizerDiscardEnable	= VK_FALSE; // TODO - check this.
-	rasterization_info.polygonMode			= VK_POLYGON_MODE_FILL;
-	rasterization_info.cullMode			= pipeline->config.cull_mode;
+	rasterization_info.polygonMode			= pipeline->polygon_mode;
+	rasterization_info.cullMode			= pipeline->cull_mode;
 	rasterization_info.frontFace			= VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	rasterization_info.depthBiasEnable		= VK_FALSE;
 	rasterization_info.depthBiasConstantFactor	= 0.f;
 	rasterization_info.depthBiasClamp		= 0.f;
 	rasterization_info.depthBiasSlopeFactor		= 0.f;
-	rasterization_info.lineWidth			= pipeline->config.line_width;
+	rasterization_info.lineWidth			= pipeline->line_width;
 
 	// Multisampling (TODO):
 	VkPipelineMultisampleStateCreateInfo multisample_info;
@@ -1326,14 +1277,14 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	// Blend:
 	VkPipelineColorBlendAttachmentState blend_state;
 	memset(&blend_state, 0, sizeof(blend_state));
-	blend_state.blendEnable		= pipeline->config.blend_enable;
+	blend_state.blendEnable		= pipeline->blend_enable;
 	blend_state.srcColorBlendFactor	= VK_BLEND_FACTOR_ZERO;
 	blend_state.dstColorBlendFactor	= VK_BLEND_FACTOR_ZERO;
-	blend_state.colorBlendOp	= pipeline->config.colour_blend_op;
+	blend_state.colorBlendOp	= pipeline->colour_blend_op;
 	blend_state.srcAlphaBlendFactor	= VK_BLEND_FACTOR_ZERO;
 	blend_state.dstAlphaBlendFactor	= VK_BLEND_FACTOR_ZERO;
-	blend_state.alphaBlendOp	= pipeline->config.alpha_blend_op;
-	blend_state.colorWriteMask	= pipeline->config.colour_write_mask;
+	blend_state.alphaBlendOp	= pipeline->alpha_blend_op;
+	blend_state.colorWriteMask	= pipeline->colour_write_mask;
 
 	VkPipelineColorBlendStateCreateInfo blend_info;
 	memset(&blend_info, 0, sizeof(blend_info));
@@ -1414,6 +1365,12 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 
 void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 {
+	if (pipeline->descriptor_set_layouts)
+	{
+		free(pipeline->descriptor_set_layouts);
+		pipeline->descriptor_set_layouts = NULL;
+	}
+
 	if (pipeline->pipeline)
 	{
 		vkDestroyPipeline(vulkan->device, pipeline->pipeline, NULL);
@@ -1436,21 +1393,15 @@ void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	}
 }
 
-void vka_bind_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
+void vka_bind_pipeline(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
+							vka_pipeline_t *pipeline)
 {
 	VkPipelineBindPoint bind_point;
-	if (pipeline->shaders[VKA_SHADER_TYPE_COMPUTE].shader)
-	{
-		bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
-	}
+	if (pipeline->is_compute_pipeline) { bind_point = VK_PIPELINE_BIND_POINT_COMPUTE; }
 	else { bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS; }
-	vkCmdBindPipeline(vulkan->command_buffers[vulkan->current_frame],
-					bind_point, pipeline->pipeline);
-}
 
-/***********
- * Shaders *
- ***********/
+	vkCmdBindPipeline(command_buffer->buffer, bind_point, pipeline->pipeline);
+}
 
 int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
 {
@@ -1530,6 +1481,144 @@ int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
 	shader->shader = temp;
 
 	free(shader_code);
+	return 0;
+}
+
+/*******************
+ * Command buffers *
+ *******************/
+
+int vka_create_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer)
+{
+	VkCommandBufferAllocateInfo allocate_info;
+	memset(&allocate_info, 0, sizeof(allocate_info));
+	allocate_info.sType			= VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocate_info.pNext			= NULL;
+	allocate_info.commandPool		= vulkan->command_pool;
+	allocate_info.level			= VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocate_info.commandBufferCount	= 1;
+
+	if (vkAllocateCommandBuffers(vulkan->device, &allocate_info,
+			&(command_buffer->buffer)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not create command buffer \"%s\".", command_buffer->name);
+		return -1;
+	}
+
+	VkFenceCreateInfo fence_info;
+	memset(&fence_info, 0, sizeof(fence_info));
+	fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fence_info.pNext = NULL;
+	if (command_buffer->fence_signaled) { fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT; }
+	else { fence_info.flags = 0; }
+
+	if (vkCreateFence(vulkan->device, &fence_info, NULL,
+		&(command_buffer->fence)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not create fence \"%s\".", command_buffer->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+void vka_destroy_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer)
+{
+	if (command_buffer->fence)
+	{
+		vkDestroyFence(vulkan->device, command_buffer->fence, NULL);
+		command_buffer->fence = VK_NULL_HANDLE;
+	}
+
+	command_buffer->buffer = VK_NULL_HANDLE;
+}
+
+int vka_begin_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
+								 VkSemaphore semaphore)
+{
+	// If fence is created signaled, wait here:
+	if (command_buffer->fence_signaled && vka_wait_for_fence(vulkan, command_buffer))
+	{
+		return -1;
+	}
+
+	VkCommandBufferBeginInfo begin_info;
+	memset(&begin_info, 0, sizeof(begin_info));
+	begin_info.sType		= VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.pNext		= NULL;
+	begin_info.flags		= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	begin_info.pInheritanceInfo	= NULL;
+
+	if (vkBeginCommandBuffer(command_buffer->buffer, &begin_info) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not begin command buffer \"%s\".", command_buffer->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+int vka_end_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer)
+{
+	if (vkEndCommandBuffer(command_buffer->buffer) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not end command buffer \"%s\".", command_buffer->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
+	VkQueue queue, VkSemaphore *wait_semaphore, VkSemaphore *signal_semaphore)
+{
+	VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	VkSubmitInfo submit_info;
+	memset(&submit_info, 0, sizeof(submit_info));
+	submit_info.sType			= VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.pNext			= NULL;
+	submit_info.commandBufferCount		= 1;
+	submit_info.pCommandBuffers		= &(command_buffer->buffer);
+	submit_info.waitSemaphoreCount		= 0;
+	submit_info.pWaitSemaphores		= wait_semaphore;
+	submit_info.pWaitDstStageMask		= &wait_stage;
+	submit_info.signalSemaphoreCount	= 0;
+	submit_info.pSignalSemaphores		= signal_semaphore;
+
+	if (wait_semaphore) { submit_info.waitSemaphoreCount = 1; }
+	if (signal_semaphore) { submit_info.signalSemaphoreCount = 1; }
+
+	if (vkQueueSubmit(queue, 1, &submit_info, command_buffer->fence) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not submit command buffer \"%s\".", command_buffer->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+int vka_wait_for_fence(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer)
+{
+	if (vkWaitForFences(vulkan->device, 1, &(command_buffer->fence),
+				VK_TRUE, UINT32_MAX) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not wait for fence \"%s\".", command_buffer->name);
+		return -1;
+	}
+
+	if (vkResetFences(vulkan->device, 1, &(command_buffer->fence)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not reset fence \"%s\".", command_buffer->name);
+		return -1;
+	}
+
 	return 0;
 }
 
@@ -1735,14 +1824,14 @@ void vka_print_vulkan(FILE *file, vka_vulkan_t *vulkan)
 	fprintf(file, "* Vulkan base debug info *\n");
 	fprintf(file, "**************************\n");
 
-	if (vulkan->config.enabled_features.samplerAnisotropy == VK_TRUE)
+	if (vulkan->enabled_features.samplerAnisotropy == VK_TRUE)
 	{
 		fprintf(file, "Sampler anisotropy\t\t\tEnabled\n");
 	}
 	else { fprintf(file, "Sampler anisotropy\t\t\tNot enabled\n"); }
 
 	fprintf(file, "Max memory allocation size\t\t= %luMB\n",
-		(vulkan->config.max_memory_allocation_size / (1024 * 1024)));
+		(vulkan->max_memory_allocation_size / (1024 * 1024)));
 
 	fprintf(file, "\n");
 
@@ -1804,26 +1893,22 @@ void vka_print_vulkan(FILE *file, vka_vulkan_t *vulkan)
 	}
 	else { fprintf(file, "Command pool\t\t\t\t= %p\n", vulkan->command_pool); }
 
-	fprintf(file, "Command buffers:\n");
+	fprintf(file, "Command buffers/fences:\n");
 	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		fprintf(file, " ---> Command buffer %d\t\t\t= ", i);
-		if (!vulkan->command_buffers[i])
+		if (!vulkan->command_buffers[i].buffer)
 		{
 			fprintf(file, "VK_NULL_HANDLE\n");
 		}
-		else { fprintf(file, "%p\n", vulkan->command_buffers[i]); }
-	}
+		else { fprintf(file, "%p\n", vulkan->command_buffers[i].buffer); }
 
-	fprintf(file, "Command fences:\n");
-	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
-	{
 		fprintf(file, " ---> Command fence %d\t\t\t= ", i);
-		if (!vulkan->command_fences[i])
+		if (!vulkan->command_buffers[i].fence)
 		{
 			fprintf(file, "VK_NULL_HANDLE\n");
 		}
-		else { fprintf(file, "%p\n", vulkan->command_fences[i]); }
+		else { fprintf(file, "%p\n", vulkan->command_buffers[i].fence); }
 	}
 
 	fprintf(file, "\n");
@@ -1919,25 +2004,25 @@ void vka_print_pipeline(FILE *file, vka_pipeline_t *pipeline)
 
 	fprintf(file, "Pipeline name: %s\n", pipeline->name);
 	fprintf(file, "Compute pipeline: ");
-	if (pipeline->config.is_compute_pipeline) { fprintf(file, "Yes\n"); }
+	if (pipeline->is_compute_pipeline) { fprintf(file, "Yes\n"); }
 	else { fprintf(file, "No\n"); }
 	fprintf(file, "Colour write mask: ");
-	if (!pipeline->config.colour_write_mask) { fprintf(file, "None\n"); }
+	if (!pipeline->colour_write_mask) { fprintf(file, "None\n"); }
 	else
 	{
-		if (pipeline->config.colour_write_mask & VK_COLOR_COMPONENT_R_BIT)
+		if (pipeline->colour_write_mask & VK_COLOR_COMPONENT_R_BIT)
 		{
 			fprintf(file, "R");
 		}
-		if (pipeline->config.colour_write_mask & VK_COLOR_COMPONENT_G_BIT)
+		if (pipeline->colour_write_mask & VK_COLOR_COMPONENT_G_BIT)
 		{
 			fprintf(file, "G");
 		}
-		if (pipeline->config.colour_write_mask & VK_COLOR_COMPONENT_B_BIT)
+		if (pipeline->colour_write_mask & VK_COLOR_COMPONENT_B_BIT)
 		{
 			fprintf(file, "B");
 		}
-		if (pipeline->config.colour_write_mask & VK_COLOR_COMPONENT_A_BIT)
+		if (pipeline->colour_write_mask & VK_COLOR_COMPONENT_A_BIT)
 		{
 			fprintf(file, "A");
 		}

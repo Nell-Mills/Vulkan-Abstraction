@@ -35,10 +35,10 @@ Link SDL3: -lSDL3
 
 Follow this pattern:
 
-- For the main Vulkan base struct (vka\_vulkan\_t), populate its .config member (optional), then use vka\_setup\_vulkan() and vka\_shutdown\_vulkan(). Function arguments:
+- For the main Vulkan base struct (vka\_vulkan\_t), define its configuration members (optional), then use vka\_setup\_vulkan() and vka\_shutdown\_vulkan(). Function arguments:
     - vka\_vulkan\_t \*
 
-- For other structs (vka\_X\_t), there will be vka\_create\_X() and vka\_destroy\_X() functions, and usually a .config member for you to populate (again, optional). Function arguments:
+- For other structs (vka\_X\_t), there will be vka\_create\_X() and vka\_destroy\_X() functions, and usually some configuration members for you to define (again, optional). Function arguments:
     - vka\_vulkan\_t \*
     - vka\_X\_t \*
 
@@ -46,6 +46,12 @@ Where applicable, vka\_create\_X() functions will also destroy old resources - i
 
 Structs available:
 
-- vka\_vulkan\_t: Device, queues, command buffers, semaphores, swapchain and debug messenger
+- vka\_vulkan\_t: Device, queues, per-frame command buffers, semaphores, swapchain and debug messenger
 
-- vka\_pipeline\_t: Pipeline layout, pipeline, shaders (note - config references descriptor set layouts, but doesn't manage them)
+- vka\_command\_buffer\_t: Command buffer and fence pair
+
+- vka\_pipeline\_t: Pipeline layout, pipeline, shaders (note - references descriptor set layouts, but doesn't manage them)
+
+Misc structs (don't follow the pattern):
+
+- vka\_shader\_t: Just a wrapper for a path and a shader module - managed by pipeline
