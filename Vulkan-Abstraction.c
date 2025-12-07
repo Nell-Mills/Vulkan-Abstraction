@@ -347,7 +347,7 @@ int vka_create_device(vka_vulkan_t *vulkan)
 			"Could not allocate memory for device queue info.");
 		return -1;
 	}
-	memset(queue_info, 0, num_queue_families * sizeof(VkDeviceQueueCreateInfo));
+	memset(queue_info, 0, num_queue_families * sizeof(queue_info[0]));
 	float queue_priorities[1] = { 1.f };
 
 	for (uint32_t i = 0; i < num_queue_families; i++)
@@ -442,6 +442,7 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	vkGetPhysicalDeviceProperties2(physical_device, &get_properties);
 
 	*max_memory_allocation_size = maintenance_properties.maxMemoryAllocationSize;
+	if (*max_memory_allocation_size >= 1073741824) { score += 5; }
 
 	uint32_t version_major = VK_API_VERSION_MAJOR(get_properties.properties.apiVersion);
 	uint32_t version_minor = VK_API_VERSION_MINOR(get_properties.properties.apiVersion);
@@ -697,6 +698,7 @@ int vka_create_command_buffers(vka_vulkan_t *vulkan)
 	for (uint32_t i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		snprintf(vulkan->command_buffers[i].name, NM_MAX_NAME_LENGTH, "Vulkan Base %u", i);
+		vulkan->command_buffers[i].fence_signaled = 1;
 		if (vka_create_command_buffer(vulkan, &(vulkan->command_buffers[i]))) { return -1; }
 	}
 
@@ -1296,8 +1298,8 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	blend_info.attachmentCount	= 1;
 	blend_info.pAttachments		= &blend_state;
 	blend_info.blendConstants[0]	= 0.f;
-	blend_info.blendConstants[1]    = 0.f;
-	blend_info.blendConstants[2]    = 0.f;
+	blend_info.blendConstants[1]	= 0.f;
+	blend_info.blendConstants[2]	= 0.f;
 	blend_info.blendConstants[3]	= 0.f;
 
 	// Dynamic state:
@@ -1320,8 +1322,8 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	pipeline_rendering_info.pNext			= NULL;
 	pipeline_rendering_info.viewMask		= 0;
 	pipeline_rendering_info.colorAttachmentCount	= 1;
-	pipeline_rendering_info.pColorAttachmentFormats	= &(vulkan->swapchain_format);
-	pipeline_rendering_info.depthAttachmentFormat	= VK_FORMAT_UNDEFINED; // TODO.
+	pipeline_rendering_info.pColorAttachmentFormats	= &(pipeline->colour_attachment_format);
+	pipeline_rendering_info.depthAttachmentFormat	= pipeline->depth_attachment_format;
 	pipeline_rendering_info.stencilAttachmentFormat	= VK_FORMAT_UNDEFINED;
 
 	// Create pipeline:
@@ -1371,12 +1373,6 @@ void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		pipeline->descriptor_set_layouts = NULL;
 	}
 
-	if (pipeline->pipeline)
-	{
-		vkDestroyPipeline(vulkan->device, pipeline->pipeline, NULL);
-		pipeline->pipeline = VK_NULL_HANDLE;
-	}
-
 	for (int i = 0; i < 3; i++)
 	{
 		if (pipeline->shaders[i].shader)
@@ -1386,6 +1382,12 @@ void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		}
 	}
 
+	if (pipeline->pipeline)
+	{
+		vkDestroyPipeline(vulkan->device, pipeline->pipeline, NULL);
+		pipeline->pipeline = VK_NULL_HANDLE;
+	}
+
 	if (pipeline->layout)
 	{
 		vkDestroyPipelineLayout(vulkan->device, pipeline->layout, NULL);
@@ -1393,8 +1395,7 @@ void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	}
 }
 
-void vka_bind_pipeline(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
-							vka_pipeline_t *pipeline)
+void vka_bind_pipeline(vka_command_buffer_t *command_buffer, vka_pipeline_t *pipeline)
 {
 	VkPipelineBindPoint bind_point;
 	if (pipeline->is_compute_pipeline) { bind_point = VK_PIPELINE_BIND_POINT_COMPUTE; }
@@ -1535,8 +1536,7 @@ void vka_destroy_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *comm
 	command_buffer->buffer = VK_NULL_HANDLE;
 }
 
-int vka_begin_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
-								 VkSemaphore semaphore)
+int vka_begin_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer)
 {
 	// If fence is created signaled, wait here:
 	if (command_buffer->fence_signaled && vka_wait_for_fence(vulkan, command_buffer))
@@ -1574,9 +1574,10 @@ int vka_end_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_b
 }
 
 int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
-	VkQueue queue, VkSemaphore *wait_semaphore, VkSemaphore *signal_semaphore)
+	VkQueue queue, VkSemaphore *wait_semaphore, VkSemaphore *signal_semaphore,
+	VkPipelineStageFlags wait_stage_mask)
 {
-	VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	VkPipelineStageFlags wait_dst_stage_mask = wait_stage_mask;
 	VkSubmitInfo submit_info;
 	memset(&submit_info, 0, sizeof(submit_info));
 	submit_info.sType			= VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1585,7 +1586,7 @@ int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *comman
 	submit_info.pCommandBuffers		= &(command_buffer->buffer);
 	submit_info.waitSemaphoreCount		= 0;
 	submit_info.pWaitSemaphores		= wait_semaphore;
-	submit_info.pWaitDstStageMask		= &wait_stage;
+	submit_info.pWaitDstStageMask		= &wait_dst_stage_mask;
 	submit_info.signalSemaphoreCount	= 0;
 	submit_info.pSignalSemaphores		= signal_semaphore;
 
@@ -1617,6 +1618,143 @@ int vka_wait_for_fence(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffe
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not reset fence \"%s\".", command_buffer->name);
 		return -1;
+	}
+
+	return 0;
+}
+
+/**************************
+ * Images and image views *
+ **************************/
+
+void vka_transition_image(vka_command_buffer_t *command_buffer, VkImage image, uint32_t mip_levels,
+			VkImageLayout old_layout, VkImageLayout new_layout,
+			VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask,
+			VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask)
+{
+	VkImageMemoryBarrier image_barrier;
+	memset(&image_barrier, 0, sizeof(image_barrier));
+	image_barrier.sType				= VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	image_barrier.pNext				= NULL;
+	image_barrier.srcAccessMask			= src_access_mask;
+	image_barrier.dstAccessMask			= dst_access_mask;
+	image_barrier.oldLayout				= old_layout;
+	image_barrier.newLayout				= new_layout;
+	image_barrier.srcQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
+	image_barrier.dstQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
+	image_barrier.image				= image;
+	image_barrier.subresourceRange.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT;
+	image_barrier.subresourceRange.baseMipLevel	= 0;
+	image_barrier.subresourceRange.levelCount	= mip_levels;
+	image_barrier.subresourceRange.baseArrayLayer	= 0;
+	image_barrier.subresourceRange.layerCount	= 1;
+
+	vkCmdPipelineBarrier(command_buffer->buffer, src_stage_mask, dst_stage_mask,
+					0, 0, NULL, 0, NULL, 1, &image_barrier);
+}
+
+/*************
+ * Rendering *
+ *************/
+
+void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
+{
+	vka_transition_image(command_buffer, render_info->colour_image, 1,
+		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+
+	VkRenderingAttachmentInfo colour_attachment_info;
+	memset(&colour_attachment_info, 0, sizeof(colour_attachment_info));
+	colour_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+	colour_attachment_info.pNext			= NULL;
+	colour_attachment_info.imageView		= render_info->colour_image_view;
+	colour_attachment_info.imageLayout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	colour_attachment_info.resolveMode		= VK_RESOLVE_MODE_NONE;
+	colour_attachment_info.resolveImageView		= VK_NULL_HANDLE;
+	colour_attachment_info.resolveImageLayout	= VK_IMAGE_LAYOUT_UNDEFINED;
+	colour_attachment_info.loadOp			= render_info->colour_load_op;
+	colour_attachment_info.storeOp			= render_info->colour_store_op;
+	colour_attachment_info.clearValue		= render_info->colour_clear_value;
+
+	// TODO - depth attachment info.
+
+	VkRenderingInfo rendering_info;
+	memset(&rendering_info, 0, sizeof(rendering_info));
+	rendering_info.sType			= VK_STRUCTURE_TYPE_RENDERING_INFO;
+	rendering_info.pNext			= NULL;
+	rendering_info.flags			= 0;
+	rendering_info.renderArea		= render_info->render_area;
+	rendering_info.layerCount		= 1;
+	rendering_info.viewMask			= 0;
+	rendering_info.colorAttachmentCount	= 1;
+	rendering_info.pColorAttachments	= &colour_attachment_info;
+	rendering_info.pDepthAttachment		= NULL; // TODO.
+	rendering_info.pStencilAttachment	= NULL;
+
+	vkCmdBeginRendering(command_buffer->buffer, &rendering_info);
+}
+
+void vka_end_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
+{
+	vkCmdEndRendering(command_buffer->buffer);
+
+	vka_transition_image(command_buffer, render_info->colour_image, 1,
+		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_NONE,
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+}
+
+void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
+{
+	// Flip the viewport:
+	VkViewport viewport;
+	memset(&viewport, 0, sizeof(viewport));
+	viewport.x		= render_info->render_area.offset.x * 1.f;
+	viewport.y		= (render_info->render_target_height * 1.f) -
+				(render_info->render_area.offset.y * 1.f);
+	viewport.width		= render_info->render_area.extent.width * 1.f;
+	viewport.height		= -(render_info->render_area.extent.height * 1.f);
+	viewport.minDepth	= 0.f;
+	viewport.maxDepth	= 1.f;
+
+	vkCmdSetViewport(command_buffer->buffer, 0, 1, &viewport);
+}
+
+void vka_set_scissor(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
+{
+	vkCmdSetScissor(command_buffer->buffer, 0, 1, &(render_info->scissor_area));
+}
+
+int vka_present_image(vka_vulkan_t *vulkan)
+{
+	VkPresentInfoKHR present_info;
+	memset(&present_info, 0, sizeof(present_info));
+	present_info.sType		= VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	present_info.pNext		= NULL;
+	present_info.waitSemaphoreCount	= 1;
+	present_info.pWaitSemaphores	= &(vulkan->render_complete[vulkan->current_frame]);
+	present_info.swapchainCount	= 1;
+	present_info.pSwapchains	= &(vulkan->swapchain);
+	present_info.pImageIndices	= &(vulkan->current_swapchain_index);
+	present_info.pResults		= NULL;
+
+	VkResult result = vkQueuePresentKHR(vulkan->present_queue, &present_info);
+	if (result != VK_SUCCESS)
+	{
+		if ((result == VK_SUBOPTIMAL_KHR) || (result == VK_ERROR_OUT_OF_DATE_KHR))
+		{
+			vulkan->recreate_swapchain = 1;
+			return 0;
+		}
+		else
+		{
+			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+				"Could not present swapchain image.");
+			return -1;
+		}
 	}
 
 	return 0;

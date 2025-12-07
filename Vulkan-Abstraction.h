@@ -36,7 +36,6 @@ typedef struct
 	/*****************
 	 * Configuration *
 	 *****************/
-
 	uint8_t fence_signaled;
 } vka_command_buffer_t;
 
@@ -132,7 +131,7 @@ typedef struct
 	// Rasterisation:
 	VkPolygonMode polygon_mode;	// Default VK_POLYGON_MODE_FILL.
 	VkCullModeFlags cull_mode;	// Default VK_CULL_MODE_NONE.
-	float line_width;		// Default and minimum 1.f.
+	float line_width;		// If < 1.f, gets set to 1.f for graphics pipelines.
 
 	// TODO multisampling.
 	// TODO depth stencil.
@@ -142,7 +141,29 @@ typedef struct
 	VkBlendOp colour_blend_op;	// Default VK_BLEND_OP_ADD.
 	VkBlendOp alpha_blend_op;
 	VkColorComponentFlags colour_write_mask; // If 0, gets set to RGBA for graphics pipelines.
+
+	// Rendering:
+	VkFormat colour_attachment_format; // Default VK_FORMAT_UNDEFINED.
+	VkFormat depth_attachment_format;
 } vka_pipeline_t;
+
+typedef struct
+{
+	VkImage colour_image;
+	VkImageView colour_image_view;
+	VkClearValue colour_clear_value;
+	VkAttachmentLoadOp colour_load_op;
+	VkAttachmentStoreOp colour_store_op;
+
+	VkImageView depth_image_view;
+	VkClearValue depth_clear_value;
+	VkAttachmentLoadOp depth_load_op;
+	VkAttachmentStoreOp depth_store_op;
+
+	VkRect2D render_area;
+	uint32_t render_target_height;
+	VkRect2D scissor_area;
+} vka_render_info_t;
 
 // Main Vulkan base:
 int vka_setup_vulkan(vka_vulkan_t *vulkan);
@@ -163,19 +184,31 @@ int vka_create_swapchain(vka_vulkan_t *vulkan);
 // Pipelines and shaders:
 int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
 void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
-void vka_bind_pipeline(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
-							vka_pipeline_t *pipeline);
+void vka_bind_pipeline(vka_command_buffer_t *command_buffer, vka_pipeline_t *pipeline);
 int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader);
 
 // Command buffers and fences:
 int vka_create_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 void vka_destroy_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
-int vka_begin_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
-								VkSemaphore semaphore);
+int vka_begin_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 int vka_end_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
-	VkQueue queue, VkSemaphore *wait_semaphore, VkSemaphore *signal_semaphore);
+	VkQueue queue, VkSemaphore *wait_semaphore, VkSemaphore *signal_semaphore,
+	VkPipelineStageFlags wait_stage_mask);
 int vka_wait_for_fence(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
+
+// Images and image views:
+void vka_transition_image(vka_command_buffer_t *command_buffer, VkImage image, uint32_t mip_levels,
+			VkImageLayout old_layout, VkImageLayout new_layout,
+			VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask,
+			VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask);
+
+// Rendering:
+void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
+void vka_end_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
+void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
+void vka_set_scissor(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
+int vka_present_image(vka_vulkan_t *vulkan);
 
 // Utility:
 void vka_device_wait_idle(vka_vulkan_t *vulkan);

@@ -5,20 +5,27 @@ For debug, define VKA_DEBUG when compiling.
 
 ## Functionality implemented:
 
-- Physical device selection
-- Window creation (SDL3)
-- Creation of the following:
-    - Device
-    - Graphics and present queues
-    - Command pool, buffers and fences
+- Vulkan base setup:
+    - Window creation (SDL3)
+    - Physical device selection and device creation
+    - Graphics and present queue
+    - Command pool, command buffers and fences
     - Semaphores
-    - Swapchain + images/image views
-    - Debug messenger (only when VKA_DEBUG is defined)
+    - Swapchain
+    - Debug messenger (with VKA_DEBUG)
 
-## Functionality in progress:
+- Pipeline setup:
+    - Pipeline layout
+    - Pipeline
+    - Shader modules
 
-- Pipelines
-- Shader modules
+- Command buffers:
+    - Begin, end, submit
+
+- Rendering:
+    - Dynamic rendering - begin, end
+    - Dynamic state - set viewport and scissor
+    - Present swapchain image
 
 ## Compilation:
 
@@ -55,3 +62,5 @@ Structs available:
 Misc structs (don't follow the pattern):
 
 - vka\_shader\_t: Just a wrapper for a path and a shader module - managed by pipeline
+
+- vka\_render\_info\_t: Container for information, such as render area
