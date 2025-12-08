@@ -46,9 +46,9 @@ int vka_setup_vulkan(vka_vulkan_t *vulkan)
 	#endif
 
 	if (vka_create_device(vulkan)) { return -1; }
+	if (vka_create_semaphores(vulkan)) { return -1; }
 	if (vka_create_command_pool(vulkan)) { return -1; }
 	if (vka_create_command_buffers(vulkan)) { return -1; }
-	if (vka_create_semaphores(vulkan)) { return -1; }
 	if (vka_create_swapchain(vulkan)) { return -1; }
 	vulkan->recreate_pipelines = 0;
 
@@ -423,252 +423,34 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	return 0;
 }
 
-int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_device,
-	uint32_t *graphics_family_index, uint32_t *present_family_index,
-	VkDeviceSize *max_memory_allocation_size, VkBool32 *sampler_anisotropy)
+int vka_create_semaphores(vka_vulkan_t *vulkan)
 {
-	int score = 0;
+	VkSemaphoreCreateInfo semaphore_info;
+	memset(&semaphore_info, 0, sizeof(semaphore_info));
+	semaphore_info.sType	= VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	semaphore_info.pNext	= NULL;
+	semaphore_info.flags	= 0;
 
-	VkPhysicalDeviceMaintenance3Properties maintenance_properties;
-	memset(&maintenance_properties, 0, sizeof(maintenance_properties));
-	maintenance_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES;
-	maintenance_properties.pNext = NULL;
-
-	VkPhysicalDeviceProperties2 get_properties;
-	memset(&get_properties, 0, sizeof(get_properties));
-	get_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-	get_properties.pNext = &maintenance_properties;
-
-	vkGetPhysicalDeviceProperties2(physical_device, &get_properties);
-
-	*max_memory_allocation_size = maintenance_properties.maxMemoryAllocationSize;
-	if (*max_memory_allocation_size >= 1073741824) { score += 5; }
-
-	uint32_t version_major = VK_API_VERSION_MAJOR(get_properties.properties.apiVersion);
-	uint32_t version_minor = VK_API_VERSION_MINOR(get_properties.properties.apiVersion);
-
-	if ((version_major < VKA_API_VERSION_MAJOR) ||
-		((version_major == VKA_API_VERSION_MAJOR) &&
-		(version_minor < VKA_API_VERSION_MINOR)))
+	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		return -1;
-	}
-
-	if (get_properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
-	{
-		score += 10;
-	}
-
-	uint32_t num_supported_extensions;
-	if (vkEnumerateDeviceExtensionProperties(physical_device, NULL,
-			&num_supported_extensions, NULL) != VK_SUCCESS)
-	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Could not enumerate extensions for physical device: %s.",
-			get_properties.properties.deviceName);
-		return -1;
-	}
-
-	VkExtensionProperties *supported_extensions = malloc(num_supported_extensions *
-							sizeof(VkExtensionProperties));
-	if (!supported_extensions)
-	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Could not allocate memory for extensions for physical device: %s.",
-			get_properties.properties.deviceName);
-		return -1;
-	}
-
-	if (vkEnumerateDeviceExtensionProperties(physical_device, NULL,
-		&num_supported_extensions, supported_extensions) != VK_SUCCESS)
-	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Could not get array of supported extensions for physical device: %s.",
-			get_properties.properties.deviceName);
-		free(supported_extensions);
-		return -1;
-	}
-
-	int supported = 0;
-	for (uint32_t i = 0; i < num_supported_extensions; i++)
-	{
-		if (!strcmp(VK_KHR_SWAPCHAIN_EXTENSION_NAME, supported_extensions[i].extensionName))
+		if (vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
+			&(vulkan->image_available[i])) != VK_SUCCESS)
 		{
-			supported = 1;
-			break;
+			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+				"Could not create semaphore: \"Image available\".");
+			return -1;
 		}
-	}
-	if (!supported)
-	{
-		free(supported_extensions);
-		return -1;
-	}
 
-	free(supported_extensions);
-
-	VkPhysicalDeviceVulkan11Features supported_features_11;
-	memset(&supported_features_11, 0, sizeof(supported_features_11));
-	supported_features_11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-	supported_features_11.pNext = NULL;
-
-	VkPhysicalDeviceVulkan12Features supported_features_12;
-	memset(&supported_features_12, 0, sizeof(supported_features_12));
-	supported_features_12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-	supported_features_12.pNext = &supported_features_11;
-
-	VkPhysicalDeviceVulkan13Features supported_features_13;
-	memset(&supported_features_13, 0, sizeof(supported_features_13));
-	supported_features_13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-	supported_features_13.pNext = &supported_features_12;
-
-	VkPhysicalDeviceFeatures2 supported_features;
-	memset(&supported_features, 0, sizeof(supported_features));
-	supported_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-	supported_features.pNext = &supported_features_13;
-
-	vkGetPhysicalDeviceFeatures2(physical_device, &supported_features);
-
-	// Deal with sampler anisotropy separately as it's not mandatory, but desirable:
-	*sampler_anisotropy = supported_features.features.samplerAnisotropy;
-	if (*sampler_anisotropy == VK_TRUE) { score += 2; }
-
-	// Compare desired features with supported features, bitwise (exclude anisotropy):
-	VkPhysicalDeviceFeatures desired_features = vulkan->enabled_features;
-	desired_features.samplerAnisotropy = VK_FALSE;
-
-	VkPhysicalDeviceVulkan11Features desired_features_11 = vulkan->enabled_features_11;
-	desired_features_11.pNext = NULL;
-	supported_features_11.pNext = NULL;
-
-	VkPhysicalDeviceVulkan12Features desired_features_12 = vulkan->enabled_features_12;
-	desired_features_12.pNext = NULL;
-	supported_features_12.pNext = NULL;
-
-	VkPhysicalDeviceVulkan13Features desired_features_13 = vulkan->enabled_features_13;
-	desired_features_13.pNext = NULL;
-	supported_features_13.pNext = NULL;
-
-	size_t sizes_features[4] = { sizeof(VkPhysicalDeviceFeatures),
-					sizeof(VkPhysicalDeviceVulkan11Features),
-					sizeof(VkPhysicalDeviceVulkan12Features),
-					sizeof(VkPhysicalDeviceVulkan13Features) };
-	size_t total_size = sizes_features[0] + sizes_features[1] +
-			sizes_features[2] + sizes_features[3];
-	void *features[8] = { (void *)(&desired_features),
-				(void *)(&desired_features_11),
-				(void *)(&desired_features_12),
-				(void *)(&desired_features_13),
-				(void *)(&(supported_features.features)),
-				(void *)(&supported_features_11),
-				(void *)(&supported_features_12),
-				(void *)(&supported_features_13) };
-
-	uint8_t *desired_features_array = malloc(total_size);
-	if (!desired_features_array)
-	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Could not allocate memory for feature comparison for device: %s.",
-			get_properties.properties.deviceName);
-		return -1;
-	}
-
-	uint8_t *supported_features_array = malloc(total_size);
-	if (!supported_features_array)
-	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Could not allocate memory for feature comparison for device: %s.",
-			get_properties.properties.deviceName);
-		free(desired_features_array);
-		return -1;
-	}
-
-	size_t offset = 0;
-	for (int i = 0; i < 4; i++)
-	{
-		memcpy(desired_features_array + offset, features[i], sizes_features[i]);
-		memcpy(supported_features_array + offset, features[i + 4], sizes_features[i]);
-		offset += sizes_features[i];
-	}
-
-	for (size_t i = 0; i < total_size; i++)
-	{
-		if ((desired_features_array[i] & supported_features_array[i]) !=
-						desired_features_array[i])
+		if (vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
+			&(vulkan->render_complete[i])) != VK_SUCCESS)
 		{
-			free(supported_features_array);
-			free(desired_features_array);
+			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+				"Could not create semaphore: \"Render complete\".");
 			return -1;
 		}
 	}
 
-	free(supported_features_array);
-	free(desired_features_array);
-
-	// TODO - check maxPerSetDescriptors and score if >= config. Outweigh anisotropy.
-
-	int graphics_queue_family_found = 0;
-	int present_queue_family_found = 0;
-	VkQueueFlags graphics_flags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
-
-	uint32_t num_queue_families;
-	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, NULL);
-	VkQueueFamilyProperties *queue_families = malloc(num_queue_families *
-					sizeof(VkQueueFamilyProperties));
-	if (!queue_families)
-	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Could not allocate memory for queue families for device: %s.",
-			get_properties.properties.deviceName);
-		return -1;
-	}
-	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families,
-								queue_families);
-
-	for (uint32_t i = 0; i < num_queue_families; i++)
-	{
-		int queues_found = 0;
-
-		if ((graphics_flags & queue_families[i].queueFlags) == graphics_flags)
-		{
-			queues_found++;
-			if (!graphics_queue_family_found)
-			{
-				*graphics_family_index = i;
-				graphics_queue_family_found = 1;
-			}
-		}
-
-		VkBool32 present_supported = VK_FALSE;
-		if (vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, i,
-			vulkan->surface, &present_supported) != VK_SUCCESS)
-		{
-			continue;
-		}
-		if (present_supported == VK_TRUE)
-		{
-			queues_found++;
-			if (!present_queue_family_found)
-			{
-				*present_family_index = i;
-				present_queue_family_found = 1;
-			}
-		}
-
-		if (queues_found == 2)
-		{
-			*graphics_family_index = i;
-			*present_family_index = i;
-			break;
-		}
-	}
-	if (!graphics_queue_family_found || !present_queue_family_found)
-	{
-		free(queue_families);
-		return -1;
-	}
-
-	free(queue_families);
-	return score;
+	return 0;
 }
 
 int vka_create_command_pool(vka_vulkan_t *vulkan)
@@ -700,36 +482,14 @@ int vka_create_command_buffers(vka_vulkan_t *vulkan)
 		snprintf(vulkan->command_buffers[i].name, NM_MAX_NAME_LENGTH, "Vulkan Base %u", i);
 		vulkan->command_buffers[i].fence_signaled = 1;
 		if (vka_create_command_buffer(vulkan, &(vulkan->command_buffers[i]))) { return -1; }
-	}
 
-	return 0;
-}
-
-int vka_create_semaphores(vka_vulkan_t *vulkan)
-{
-	VkSemaphoreCreateInfo semaphore_info;
-	memset(&semaphore_info, 0, sizeof(semaphore_info));
-	semaphore_info.sType	= VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	semaphore_info.pNext	= NULL;
-	semaphore_info.flags	= 0;
-
-	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
-	{
-		if (vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
-			&(vulkan->image_available[i])) != VK_SUCCESS)
-		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-				"Could not create semaphore: \"Image available\".");
-			return -1;
-		}
-
-		if (vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
-			&(vulkan->render_complete[i])) != VK_SUCCESS)
-		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-				"Could not create semaphore: \"Render complete\".");
-			return -1;
-		}
+		vulkan->command_buffers[i].use_wait = 1;
+		vulkan->command_buffers[i].use_signal = 1;
+		vulkan->command_buffers[i].wait_dst_stage_mask =
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		vulkan->command_buffers[i].wait_semaphore = &(vulkan->image_available[i]);
+		vulkan->command_buffers[i].signal_semaphore = &(vulkan->render_complete[i]);
+		vulkan->command_buffers[i].queue = &(vulkan->graphics_queue);
 	}
 
 	return 0;
@@ -1028,6 +788,254 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (old_format != vulkan->swapchain_format) { vulkan->recreate_pipelines = 1; }
 
 	return 0;
+}
+
+int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_device,
+	uint32_t *graphics_family_index, uint32_t *present_family_index,
+	VkDeviceSize *max_memory_allocation_size, VkBool32 *sampler_anisotropy)
+{
+	int score = 0;
+
+	VkPhysicalDeviceMaintenance3Properties maintenance_properties;
+	memset(&maintenance_properties, 0, sizeof(maintenance_properties));
+	maintenance_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES;
+	maintenance_properties.pNext = NULL;
+
+	VkPhysicalDeviceProperties2 get_properties;
+	memset(&get_properties, 0, sizeof(get_properties));
+	get_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+	get_properties.pNext = &maintenance_properties;
+
+	vkGetPhysicalDeviceProperties2(physical_device, &get_properties);
+
+	*max_memory_allocation_size = maintenance_properties.maxMemoryAllocationSize;
+	if (*max_memory_allocation_size >= 1073741824) { score += 5; }
+
+	uint32_t version_major = VK_API_VERSION_MAJOR(get_properties.properties.apiVersion);
+	uint32_t version_minor = VK_API_VERSION_MINOR(get_properties.properties.apiVersion);
+
+	if ((version_major < VKA_API_VERSION_MAJOR) ||
+		((version_major == VKA_API_VERSION_MAJOR) &&
+		(version_minor < VKA_API_VERSION_MINOR)))
+	{
+		return -1;
+	}
+
+	if (get_properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+	{
+		score += 10;
+	}
+
+	uint32_t num_supported_extensions;
+	if (vkEnumerateDeviceExtensionProperties(physical_device, NULL,
+			&num_supported_extensions, NULL) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not enumerate extensions for physical device: %s.",
+			get_properties.properties.deviceName);
+		return -1;
+	}
+
+	VkExtensionProperties *supported_extensions = malloc(num_supported_extensions *
+							sizeof(VkExtensionProperties));
+	if (!supported_extensions)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not allocate memory for extensions for physical device: %s.",
+			get_properties.properties.deviceName);
+		return -1;
+	}
+
+	if (vkEnumerateDeviceExtensionProperties(physical_device, NULL,
+		&num_supported_extensions, supported_extensions) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not get array of supported extensions for physical device: %s.",
+			get_properties.properties.deviceName);
+		free(supported_extensions);
+		return -1;
+	}
+
+	int supported = 0;
+	for (uint32_t i = 0; i < num_supported_extensions; i++)
+	{
+		if (!strcmp(VK_KHR_SWAPCHAIN_EXTENSION_NAME, supported_extensions[i].extensionName))
+		{
+			supported = 1;
+			break;
+		}
+	}
+	if (!supported)
+	{
+		free(supported_extensions);
+		return -1;
+	}
+
+	free(supported_extensions);
+
+	VkPhysicalDeviceVulkan11Features supported_features_11;
+	memset(&supported_features_11, 0, sizeof(supported_features_11));
+	supported_features_11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+	supported_features_11.pNext = NULL;
+
+	VkPhysicalDeviceVulkan12Features supported_features_12;
+	memset(&supported_features_12, 0, sizeof(supported_features_12));
+	supported_features_12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+	supported_features_12.pNext = &supported_features_11;
+
+	VkPhysicalDeviceVulkan13Features supported_features_13;
+	memset(&supported_features_13, 0, sizeof(supported_features_13));
+	supported_features_13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+	supported_features_13.pNext = &supported_features_12;
+
+	VkPhysicalDeviceFeatures2 supported_features;
+	memset(&supported_features, 0, sizeof(supported_features));
+	supported_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	supported_features.pNext = &supported_features_13;
+
+	vkGetPhysicalDeviceFeatures2(physical_device, &supported_features);
+
+	// Deal with sampler anisotropy separately as it's not mandatory, but desirable:
+	*sampler_anisotropy = supported_features.features.samplerAnisotropy;
+	if (*sampler_anisotropy == VK_TRUE) { score += 2; }
+
+	// Compare desired features with supported features, bitwise (exclude anisotropy):
+	VkPhysicalDeviceFeatures desired_features = vulkan->enabled_features;
+	desired_features.samplerAnisotropy = VK_FALSE;
+
+	VkPhysicalDeviceVulkan11Features desired_features_11 = vulkan->enabled_features_11;
+	desired_features_11.pNext = NULL;
+	supported_features_11.pNext = NULL;
+
+	VkPhysicalDeviceVulkan12Features desired_features_12 = vulkan->enabled_features_12;
+	desired_features_12.pNext = NULL;
+	supported_features_12.pNext = NULL;
+
+	VkPhysicalDeviceVulkan13Features desired_features_13 = vulkan->enabled_features_13;
+	desired_features_13.pNext = NULL;
+	supported_features_13.pNext = NULL;
+
+	size_t sizes_features[4] = { sizeof(VkPhysicalDeviceFeatures),
+					sizeof(VkPhysicalDeviceVulkan11Features),
+					sizeof(VkPhysicalDeviceVulkan12Features),
+					sizeof(VkPhysicalDeviceVulkan13Features) };
+	size_t total_size = sizes_features[0] + sizes_features[1] +
+			sizes_features[2] + sizes_features[3];
+	void *features[8] = { (void *)(&desired_features),
+				(void *)(&desired_features_11),
+				(void *)(&desired_features_12),
+				(void *)(&desired_features_13),
+				(void *)(&(supported_features.features)),
+				(void *)(&supported_features_11),
+				(void *)(&supported_features_12),
+				(void *)(&supported_features_13) };
+
+	uint8_t *desired_features_array = malloc(total_size);
+	if (!desired_features_array)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not allocate memory for feature comparison for device: %s.",
+			get_properties.properties.deviceName);
+		return -1;
+	}
+
+	uint8_t *supported_features_array = malloc(total_size);
+	if (!supported_features_array)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not allocate memory for feature comparison for device: %s.",
+			get_properties.properties.deviceName);
+		free(desired_features_array);
+		return -1;
+	}
+
+	size_t offset = 0;
+	for (int i = 0; i < 4; i++)
+	{
+		memcpy(desired_features_array + offset, features[i], sizes_features[i]);
+		memcpy(supported_features_array + offset, features[i + 4], sizes_features[i]);
+		offset += sizes_features[i];
+	}
+
+	for (size_t i = 0; i < total_size; i++)
+	{
+		if ((desired_features_array[i] & supported_features_array[i]) !=
+						desired_features_array[i])
+		{
+			free(supported_features_array);
+			free(desired_features_array);
+			return -1;
+		}
+	}
+
+	free(supported_features_array);
+	free(desired_features_array);
+
+	// TODO - check maxPerSetDescriptors and score if >= config. Outweigh anisotropy.
+
+	int graphics_queue_family_found = 0;
+	int present_queue_family_found = 0;
+	VkQueueFlags graphics_flags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
+
+	uint32_t num_queue_families;
+	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, NULL);
+	VkQueueFamilyProperties *queue_families = malloc(num_queue_families *
+					sizeof(VkQueueFamilyProperties));
+	if (!queue_families)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not allocate memory for queue families for device: %s.",
+			get_properties.properties.deviceName);
+		return -1;
+	}
+	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families,
+								queue_families);
+
+	for (uint32_t i = 0; i < num_queue_families; i++)
+	{
+		int queues_found = 0;
+
+		if ((graphics_flags & queue_families[i].queueFlags) == graphics_flags)
+		{
+			queues_found++;
+			if (!graphics_queue_family_found)
+			{
+				*graphics_family_index = i;
+				graphics_queue_family_found = 1;
+			}
+		}
+
+		VkBool32 present_supported = VK_FALSE;
+		if (vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, i,
+			vulkan->surface, &present_supported) != VK_SUCCESS)
+		{
+			continue;
+		}
+		if (present_supported == VK_TRUE)
+		{
+			queues_found++;
+			if (!present_queue_family_found)
+			{
+				*present_family_index = i;
+				present_queue_family_found = 1;
+			}
+		}
+
+		if (queues_found == 2)
+		{
+			*graphics_family_index = i;
+			*present_family_index = i;
+			break;
+		}
+	}
+	if (!graphics_queue_family_found || !present_queue_family_found)
+	{
+		free(queue_families);
+		return -1;
+	}
+
+	free(queue_families);
+	return score;
 }
 
 /*************************
@@ -1373,14 +1381,7 @@ void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		pipeline->descriptor_set_layouts = NULL;
 	}
 
-	for (int i = 0; i < 3; i++)
-	{
-		if (pipeline->shaders[i].shader)
-		{
-			vkDestroyShaderModule(vulkan->device, pipeline->shaders[i].shader, NULL);
-			pipeline->shaders[i].shader = VK_NULL_HANDLE;
-		}
-	}
+	for (int i = 0; i < 3; i++) { vka_destroy_shader(vulkan, &(pipeline->shaders[i])); }
 
 	if (pipeline->pipeline)
 	{
@@ -1485,6 +1486,15 @@ int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
 	return 0;
 }
 
+void vka_destroy_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
+{
+	if (shader->shader)
+	{
+		vkDestroyShaderModule(vulkan->device, shader->shader, NULL);
+		shader->shader = VK_NULL_HANDLE;
+	}
+}
+
 /*******************
  * Command buffers *
  *******************/
@@ -1573,27 +1583,22 @@ int vka_end_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_b
 	return 0;
 }
 
-int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
-	VkQueue queue, VkSemaphore *wait_semaphore, VkSemaphore *signal_semaphore,
-	VkPipelineStageFlags wait_stage_mask)
+int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer)
 {
-	VkPipelineStageFlags wait_dst_stage_mask = wait_stage_mask;
 	VkSubmitInfo submit_info;
 	memset(&submit_info, 0, sizeof(submit_info));
 	submit_info.sType			= VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit_info.pNext			= NULL;
 	submit_info.commandBufferCount		= 1;
 	submit_info.pCommandBuffers		= &(command_buffer->buffer);
-	submit_info.waitSemaphoreCount		= 0;
-	submit_info.pWaitSemaphores		= wait_semaphore;
-	submit_info.pWaitDstStageMask		= &wait_dst_stage_mask;
-	submit_info.signalSemaphoreCount	= 0;
-	submit_info.pSignalSemaphores		= signal_semaphore;
+	submit_info.waitSemaphoreCount		= (command_buffer->use_wait != 0);
+	submit_info.pWaitSemaphores		= command_buffer->wait_semaphore;
+	submit_info.pWaitDstStageMask		= &command_buffer->wait_dst_stage_mask;
+	submit_info.signalSemaphoreCount	= (command_buffer->use_signal != 0);
+	submit_info.pSignalSemaphores		= command_buffer->signal_semaphore;
 
-	if (wait_semaphore) { submit_info.waitSemaphoreCount = 1; }
-	if (signal_semaphore) { submit_info.signalSemaphoreCount = 1; }
-
-	if (vkQueueSubmit(queue, 1, &submit_info, command_buffer->fence) != VK_SUCCESS)
+	if (vkQueueSubmit(*(command_buffer->queue), 1, &submit_info,
+			command_buffer->fence) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not submit command buffer \"%s\".", command_buffer->name);
@@ -1627,30 +1632,27 @@ int vka_wait_for_fence(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffe
  * Images and image views *
  **************************/
 
-void vka_transition_image(vka_command_buffer_t *command_buffer, VkImage image, uint32_t mip_levels,
-			VkImageLayout old_layout, VkImageLayout new_layout,
-			VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask,
-			VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask)
+void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_info_t *image_info)
 {
 	VkImageMemoryBarrier image_barrier;
 	memset(&image_barrier, 0, sizeof(image_barrier));
 	image_barrier.sType				= VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	image_barrier.pNext				= NULL;
-	image_barrier.srcAccessMask			= src_access_mask;
-	image_barrier.dstAccessMask			= dst_access_mask;
-	image_barrier.oldLayout				= old_layout;
-	image_barrier.newLayout				= new_layout;
+	image_barrier.srcAccessMask			= image_info->src_access_mask;
+	image_barrier.dstAccessMask			= image_info->dst_access_mask;
+	image_barrier.oldLayout				= image_info->old_layout;
+	image_barrier.newLayout				= image_info->new_layout;
 	image_barrier.srcQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
 	image_barrier.dstQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
-	image_barrier.image				= image;
+	image_barrier.image				= *(image_info->image);
 	image_barrier.subresourceRange.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT;
 	image_barrier.subresourceRange.baseMipLevel	= 0;
-	image_barrier.subresourceRange.levelCount	= mip_levels;
+	image_barrier.subresourceRange.levelCount	= image_info->mip_levels;
 	image_barrier.subresourceRange.baseArrayLayer	= 0;
 	image_barrier.subresourceRange.layerCount	= 1;
 
-	vkCmdPipelineBarrier(command_buffer->buffer, src_stage_mask, dst_stage_mask,
-					0, 0, NULL, 0, NULL, 1, &image_barrier);
+	vkCmdPipelineBarrier(command_buffer->buffer, image_info->src_stage_mask,
+		image_info->dst_stage_mask, 0, 0, NULL, 0, NULL, 1, &image_barrier);
 }
 
 /*************
@@ -1659,17 +1661,23 @@ void vka_transition_image(vka_command_buffer_t *command_buffer, VkImage image, u
 
 void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
 {
-	vka_transition_image(command_buffer, render_info->colour_image, 1,
-		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+	vka_image_info_t image_info = {0};
+	image_info.image		= render_info->colour_image;
+	image_info.mip_levels		= 1;
+	image_info.src_access_mask	= VK_ACCESS_NONE;
+	image_info.dst_access_mask	= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	image_info.old_layout		= VK_IMAGE_LAYOUT_UNDEFINED;
+	image_info.new_layout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	image_info.src_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	image_info.dst_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+	vka_transition_image(command_buffer, &image_info);
 
 	VkRenderingAttachmentInfo colour_attachment_info;
 	memset(&colour_attachment_info, 0, sizeof(colour_attachment_info));
 	colour_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 	colour_attachment_info.pNext			= NULL;
-	colour_attachment_info.imageView		= render_info->colour_image_view;
+	colour_attachment_info.imageView		= *(render_info->colour_image_view);
 	colour_attachment_info.imageLayout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	colour_attachment_info.resolveMode		= VK_RESOLVE_MODE_NONE;
 	colour_attachment_info.resolveImageView		= VK_NULL_HANDLE;
@@ -1700,11 +1708,17 @@ void vka_end_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *
 {
 	vkCmdEndRendering(command_buffer->buffer);
 
-	vka_transition_image(command_buffer, render_info->colour_image, 1,
-		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_NONE,
-		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-		VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+	vka_image_info_t image_info = {0};
+	image_info.image		= render_info->colour_image;
+	image_info.mip_levels		= 1;
+	image_info.src_access_mask	= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	image_info.dst_access_mask	= VK_ACCESS_NONE;
+	image_info.old_layout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	image_info.new_layout		= VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	image_info.src_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	image_info.dst_stage_mask	= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+
+	vka_transition_image(command_buffer, &image_info);
 }
 
 void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
@@ -1760,6 +1774,107 @@ int vka_present_image(vka_vulkan_t *vulkan)
 	return 0;
 }
 
+/**********
+ * Memory *
+ **********/
+
+int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
+{
+	if (!allocation->requirements.size)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Trying to allocate memory of size 0 for \"%s\".", allocation->name);
+		return -1;
+	}
+
+	if (!allocation->properties[0] || !allocation->properties[1])
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Trying to allocate memory with insufficient properties for \"%s\".",
+			allocation->name);
+		return -1;
+	}
+
+	VkMemoryAllocateInfo allocate_info;
+	memset(&allocate_info, 0, sizeof(allocate_info));
+	allocate_info.sType		= VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate_info.pNext		= NULL;
+	allocate_info.allocationSize	= allocation->requirements.size;
+
+	VkPhysicalDeviceMemoryProperties device_properties;
+	vkGetPhysicalDeviceMemoryProperties(vulkan->physical_device, &device_properties);
+	int found_suitable = 0;
+	for (uint32_t i = 0; i < device_properties.memoryTypeCount; i++)
+	{
+		if (memory_requirements.memoryTypeBits & (1 << i))
+		{
+			if ((device_properties.memoryTypes[i].propertyFlags &
+				allocation->properties[0]) == allocation->properties[0])
+			{
+				// First choice - record and stop here:
+				allocate_info.memoryTypeIndex = i;
+				found_suitable = 1;
+				break;
+			}
+
+			if (!found_suitable && ((device_properties.memoryTypes[i].propertyFlags &
+				allocation->properties[1]) == allocation->properties[1]))
+			{
+				// Second choice - record but don't stop here:
+				allocate_info.memoryTypeIndex = i;
+				found_suitable = 1;
+			}
+		}
+	}
+
+	if (!found_suitable)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not find suitable memory type for \"%s\".", allocation->name);
+		return -1;
+	}
+
+	if (vkAllocateMemory(vulkan->device, &allocate_info, NULL,
+			&(allocation->memory)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not allocate memory for \"%s\".", allocation->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+void vka_destroy_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
+{
+	if (allocation->mapped_data) { vka_unmap_memory(vulkan, allocation); }
+
+	if (allocation->memory)
+	{
+		vkFreeMemory(vulkan->device, allocation->memory, NULL);
+		allocation->memory = VK_NULL_HANDLE;
+	}
+}
+
+int vka_map_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
+{
+	if (vkMapMemory(vulkan->device, allocation->memory, allocation->map_offset,
+		allocation->map_size, &(allocation->mapped_data)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not map memory for \"%s\".", allocation->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+void vka_unmap_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
+{
+	vkUnmapMemory(vulkan->device, allocation->memory);
+	allocation->mapped_data = NULL;
+}
+
 /***********
  * Utility *
  ***********/
@@ -1767,6 +1882,11 @@ int vka_present_image(vka_vulkan_t *vulkan)
 void vka_device_wait_idle(vka_vulkan_t *vulkan)
 {
 	if (vulkan->device) { vkDeviceWaitIdle(vulkan->device); }
+}
+
+void vka_next_frame(vka_vulkan_t *vulkan)
+{
+	vulkan->current_frame = (vulkan->current_frame + 1) % VKA_MAX_FRAMES_IN_FLIGHT;
 }
 
 int vka_get_next_swapchain_image(vka_vulkan_t *vulkan)
@@ -1791,10 +1911,6 @@ int vka_get_next_swapchain_image(vka_vulkan_t *vulkan)
 
 	return 0;
 }
-
-/*********
- * Debug *
- *********/
 
 #ifdef VKA_DEBUG
 int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)

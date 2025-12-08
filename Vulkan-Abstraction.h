@@ -27,16 +27,31 @@
 #define VKA_SHADER_TYPE_FRAGMENT	1
 #define VKA_SHADER_TYPE_COMPUTE		2
 
+/* Note - pointers to Vk structs are managed outside their containers.
+ * Exception: swapchain images and image views in vka_vulkan_t. */
+
+/*************************
+ * Functional containers *
+ *************************/
+
 typedef struct
 {
 	char name[NM_MAX_NAME_LENGTH];
 	VkCommandBuffer buffer;
 	VkFence fence;
 
-	/*****************
+	/*---------------*
 	 * Configuration *
-	 *****************/
+	 *---------------*/
 	uint8_t fence_signaled;
+
+	uint8_t use_wait;
+	uint8_t use_signal;
+	VkPipelineStageFlags wait_dst_stage_mask;
+	VkSemaphore *wait_semaphore;
+	VkSemaphore *signal_semaphore;
+
+	VkQueue *queue;
 } vka_command_buffer_t;
 
 typedef struct
@@ -76,9 +91,9 @@ typedef struct
 	VkDebugUtilsMessengerEXT debug_messenger;
 	#endif
 
-	/*****************
+	/*---------------*
 	 * Configuration *
-	 *****************/
+	 *---------------*/
 	int minimum_window_width;
 	int minimum_window_height;
 
@@ -106,14 +121,11 @@ typedef struct
 	VkPipeline pipeline;
 	vka_shader_t shaders[3];
 
-	/*****************
+	/*---------------*
 	 * Configuration *
-	 *****************/
+	 *---------------*/
 	int is_compute_pipeline;
 
-	/* Note - actual descriptor set layouts are managed OUTSIDE the
-	 * pipeline, but this array is freed by vka_destroy_pipeline().
-	 * Allocate it outside the pipeline as well. */
 	uint32_t num_descriptor_set_layouts;
 	VkDescriptorSetLayout *descriptor_set_layouts;
 
@@ -149,13 +161,32 @@ typedef struct
 
 typedef struct
 {
-	VkImage colour_image;
-	VkImageView colour_image_view;
+	char name[NM_MAX_NAME_LENGTH];
+	VkDeviceMemory memory;
+	void *mapped_data;
+
+	/*---------------*
+	 * Configuration *
+	 *---------------*/
+	VkMemoryRequirements requirements;
+	VkMemoryPropertyFlags properties[2]; // First choice, second choice.
+	VkOffset map_offset;
+	VkDeviceSize map_size;
+} vka_allocation_t;
+
+/**************************
+ * Information containers *
+ **************************/
+
+typedef struct
+{
+	VkImage *colour_image;
+	VkImageView *colour_image_view;
 	VkClearValue colour_clear_value;
 	VkAttachmentLoadOp colour_load_op;
 	VkAttachmentStoreOp colour_store_op;
 
-	VkImageView depth_image_view;
+	VkImageView *depth_image_view;
 	VkClearValue depth_clear_value;
 	VkAttachmentLoadOp depth_load_op;
 	VkAttachmentStoreOp depth_store_op;
@@ -165,6 +196,19 @@ typedef struct
 	VkRect2D scissor_area;
 } vka_render_info_t;
 
+typedef struct
+{
+	VkImage *image;
+	uint32_t mip_levels;
+
+	VkAccessFlags src_access_mask;
+	VkAccessFlags dst_access_mask;
+	VkImageLayout old_layout;
+	VkImageLayout new_layout;
+	VkPipelineStageFlags src_stage_mask;
+	VkPipelineStageFlags dst_stage_mask;
+} vka_image_info_t;
+
 // Main Vulkan base:
 int vka_setup_vulkan(vka_vulkan_t *vulkan);
 void vka_shutdown_vulkan(vka_vulkan_t *vulkan);
@@ -172,36 +216,31 @@ int vka_create_window(vka_vulkan_t *vulkan);
 int vka_create_instance(vka_vulkan_t *vulkan);
 int vka_create_surface(vka_vulkan_t *vulkan);
 int vka_create_device(vka_vulkan_t *vulkan);
+int vka_create_semaphores(vka_vulkan_t *vulkan);
+int vka_create_command_pool(vka_vulkan_t *vulkan);
+int vka_create_command_buffers(vka_vulkan_t *vulkan);
+int vka_create_swapchain(vka_vulkan_t *vulkan);
 int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_device,
 	uint32_t *graphics_family_index, uint32_t *present_family_index,
 	VkDeviceSize *max_memory_allocation_size, VkBool32 *sampler_anisotropy);
-int vka_create_command_pool(vka_vulkan_t *vulkan);
-int vka_create_command_buffers(vka_vulkan_t *vulkan);
-int vka_create_command_fences(vka_vulkan_t *vulkan);
-int vka_create_semaphores(vka_vulkan_t *vulkan);
-int vka_create_swapchain(vka_vulkan_t *vulkan);
 
 // Pipelines and shaders:
 int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
 void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
 void vka_bind_pipeline(vka_command_buffer_t *command_buffer, vka_pipeline_t *pipeline);
 int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader);
+void vka_destroy_shader(vka_vulkan_t *vulkan, vka_shader_t *shader);
 
 // Command buffers and fences:
 int vka_create_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 void vka_destroy_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 int vka_begin_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 int vka_end_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
-int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
-	VkQueue queue, VkSemaphore *wait_semaphore, VkSemaphore *signal_semaphore,
-	VkPipelineStageFlags wait_stage_mask);
+int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 int vka_wait_for_fence(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 
 // Images and image views:
-void vka_transition_image(vka_command_buffer_t *command_buffer, VkImage image, uint32_t mip_levels,
-			VkImageLayout old_layout, VkImageLayout new_layout,
-			VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask,
-			VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask);
+void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_info_t *image_info);
 
 // Rendering:
 void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
@@ -210,11 +249,17 @@ void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *r
 void vka_set_scissor(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
 int vka_present_image(vka_vulkan_t *vulkan);
 
+// Memory:
+int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation);
+void vka_destroy_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation);
+int vka_map_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation);
+void vka_unmap_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation);
+
 // Utility:
 void vka_device_wait_idle(vka_vulkan_t *vulkan);
+void vka_next_frame(vka_vulkan_t *vulkan);
 int vka_get_next_swapchain_image(vka_vulkan_t *vulkan);
 
-// Debug:
 #ifdef VKA_DEBUG
 int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan);
 int vka_create_debug_messenger(vka_vulkan_t *vulkan);

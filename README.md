@@ -51,16 +51,18 @@ Follow this pattern:
 
 Where applicable, vka\_create\_X() functions will also destroy old resources - if the creation fails, the old resource will still be valid.
 
-Structs available:
+Functional containers:
 
-- vka\_vulkan\_t: Device, queues, per-frame command buffers, semaphores, swapchain and debug messenger
+- vka\_vulkan\_t: Device, queues, per-frame semaphores and command buffers, swapchain, debug messenger
 
 - vka\_command\_buffer\_t: Command buffer and fence pair
 
-- vka\_pipeline\_t: Pipeline layout, pipeline, shaders (note - references descriptor set layouts, but doesn't manage them)
+- vka\_pipeline\_t: Pipeline layout, pipeline, shaders
 
-Misc structs (don't follow the pattern):
+- vka\_shader\_t: Mostly a wrapper for a path and a shader module - managed by pipelines but can be standalone, too
 
-- vka\_shader\_t: Just a wrapper for a path and a shader module - managed by pipeline
+Information containers:
 
-- vka\_render\_info\_t: Container for information, such as render area
+- vka\_render\_info\_t: Colour and depth attachment information, and render area information
+
+- vka\_image\_info\_t: Information needed to transition an image layout
