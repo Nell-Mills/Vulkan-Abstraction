@@ -27,6 +27,10 @@ For debug, define VKA_DEBUG when compiling.
     - Dynamic state - set viewport and scissor
     - Present swapchain image
 
+- Memory:
+    - Basic allocation
+    - Memory mapping
+
 ## Compilation:
 
 Depends on:
@@ -61,8 +65,10 @@ Functional containers:
 
 - vka\_shader\_t: Mostly a wrapper for a path and a shader module - managed by pipelines but can be standalone, too
 
+- vka\_allocation\_t: Container for memory allocation, as well as mapped memory.
+
 Information containers:
 
-- vka\_render\_info\_t: Colour and depth attachment information, and render area information
+- vka\_render\_info\_t: Colour and depth attachment information, render area information
 
 - vka\_image\_info\_t: Information needed to transition an image layout

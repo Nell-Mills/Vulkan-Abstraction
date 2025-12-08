@@ -169,9 +169,9 @@ typedef struct
 	 * Configuration *
 	 *---------------*/
 	VkMemoryRequirements requirements;
-	VkMemoryPropertyFlags properties[2]; // First choice, second choice.
-	VkOffset map_offset;
-	VkDeviceSize map_size;
+	VkMemoryPropertyFlags properties[2]; // First choice, second choice. First can't be 0.
+	VkDeviceSize map_offset;
+	VkDeviceSize map_size; // If 0, uses VK_WHOLE_SIZE.
 } vka_allocation_t;
 
 /**************************

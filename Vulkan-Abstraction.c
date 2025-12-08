@@ -1787,10 +1787,10 @@ int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 		return -1;
 	}
 
-	if (!allocation->properties[0] || !allocation->properties[1])
+	if (!allocation->properties[0])
 	{
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Trying to allocate memory with insufficient properties for \"%s\".",
+			"Trying to allocate memory with no first choice of properties for \"%s\".",
 			allocation->name);
 		return -1;
 	}
@@ -1806,7 +1806,7 @@ int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 	int found_suitable = 0;
 	for (uint32_t i = 0; i < device_properties.memoryTypeCount; i++)
 	{
-		if (memory_requirements.memoryTypeBits & (1 << i))
+		if (allocation->requirements.memoryTypeBits & (1 << i))
 		{
 			if ((device_properties.memoryTypes[i].propertyFlags &
 				allocation->properties[0]) == allocation->properties[0])
@@ -1817,7 +1817,8 @@ int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 				break;
 			}
 
-			if (!found_suitable && ((device_properties.memoryTypes[i].propertyFlags &
+			if (!found_suitable && allocation->properties[1] &&
+				((device_properties.memoryTypes[i].propertyFlags &
 				allocation->properties[1]) == allocation->properties[1]))
 			{
 				// Second choice - record but don't stop here:
@@ -1858,8 +1859,11 @@ void vka_destroy_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 
 int vka_map_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 {
+	VkDeviceSize map_size = allocation->map_size;
+	if (!map_size) { map_size = VK_WHOLE_SIZE; }
+
 	if (vkMapMemory(vulkan->device, allocation->memory, allocation->map_offset,
-		allocation->map_size, &(allocation->mapped_data)) != VK_SUCCESS)
+			map_size, 0, &(allocation->mapped_data)) != VK_SUCCESS)
 	{
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
 			"Could not map memory for \"%s\".", allocation->name);
