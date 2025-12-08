@@ -2389,6 +2389,58 @@ void vka_print_vulkan(FILE *file, vka_vulkan_t *vulkan)
 	else { fprintf(file, "Debug messenger\t\t\t\t= %p\n", vulkan->debug_messenger); }
 }
 
+void vka_print_command_buffer(FILE *file, vka_command_buffer_t *command_buffer)
+{
+	fprintf(file, "************************************\n");
+	fprintf(file, "* Vulkan command buffer debug info *\n");
+	fprintf(file, "************************************\n");
+
+	fprintf(file, "Command buffer name: %s\n", command_buffer->name);
+	fprintf(file, "Fence created signaled: ");
+	if (command_buffer->fence_signaled) { fprintf(file, "Yes\n"); }
+	else { fprintf(file, "No\n"); }
+
+	fprintf(file, "\n");
+
+	if (!command_buffer->buffer) { fprintf(file, "Buffer\t\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Buffer\t\t\t\t\t= %p\n", command_buffer->buffer); }
+	if (!command_buffer->fence) { fprintf(file, "Fence\t\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Fence\t\t\t\t\t= %p\n", command_buffer->fence); }
+
+	fprintf(file, "\n");
+
+	fprintf(file, "Use wait semaphore: ");
+	if (command_buffer->use_wait) { fprintf(file, "Yes"); }
+	else { fprintf(file, "No"); }
+	if (!(*(command_buffer->wait_semaphore))) { fprintf(file, "\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "\t\t\t= %p\n", *(command_buffer->wait_semaphore)); }
+
+	fprintf(file, "Use signal semaphore: ");
+	if (command_buffer->use_signal) { fprintf(file, "Yes"); }
+	else { fprintf(file, "No"); }
+	if (!(*(command_buffer->signal_semaphore))) { fprintf(file, "\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "\t\t= %p\n", *(command_buffer->signal_semaphore)); }
+
+	fprintf(file, "\n");
+
+	if (!(*(command_buffer->queue))) { fprintf(file, "Queue\t\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Queue\t\t\t\t\t= %p\n", *(command_buffer->queue)); }
+}
+
+void vka_print_shader(FILE *file, vka_shader_t *shader)
+{
+	fprintf(file, "****************************\n");
+	fprintf(file, "* Vulkan shader debug info *\n");
+	fprintf(file, "****************************\n");
+
+	fprintf(file, "Shader path: %s\n", shader->path);
+
+	fprintf(file, "\n");
+
+	if (!shader->shader) { fprintf(file, "Shader\t\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Shader\t\t\t\t\t= %p\n", shader->shader); }
+}
+
 void vka_print_pipeline(FILE *file, vka_pipeline_t *pipeline)
 {
 	fprintf(file, "******************************\n");
@@ -2440,6 +2492,87 @@ void vka_print_pipeline(FILE *file, vka_pipeline_t *pipeline)
 			fprintf(file, "%s= VK_NULL_HANDLE\n", shader_types[i]);
 		}
 		else { fprintf(file, "%s= %p\n", shader_types[i], pipeline->shaders[i].shader); }
+	}
+}
+
+void vka_print_allocation(FILE *file, vka_allocation_t *allocation)
+{
+	fprintf(file, "********************************\n");
+	fprintf(file, "* Vulkan allocation debug info *\n");
+	fprintf(file, "********************************\n");
+
+	fprintf(file, "Allocation name: %s\n", allocation->name);
+
+	fprintf(file, "\n");
+
+	if (!allocation->memory) { fprintf(file, "Memory\t\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Memory\t\t\t\t\t= %p\n", allocation->memory); }
+	if (!allocation->mapped_data) { fprintf(file, "Mapped pointer\t\t\t\t= NULL\n"); }
+	else { fprintf(file, "Mapped pointer\t\t\t\t= %p\n", allocation->mapped_data); }
+}
+
+void vka_print_buffer(FILE *file, vka_buffer_t *buffer)
+{
+	fprintf(file, "****************************\n");
+	fprintf(file, "* Vulkan buffer debug info *\n");
+	fprintf(file, "****************************\n");
+
+	fprintf(file, "Buffer name: %s\n", buffer->name);
+
+	fprintf(file, "\n");
+
+	if (!buffer->buffer) { fprintf(file, "Buffer\t\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Buffer\t\t\t\t\t= %p\n", buffer->buffer); }
+	if (!buffer->allocation) { fprintf(file, "Allocation\t\t\t\t= NULL\n"); }
+	else { fprintf(file, "Allocation\t\t\t\t= %p\n", buffer->allocation); }
+}
+
+void vka_print_vertex_buffers(FILE *file, vka_vertex_buffers_t *vertex_buffers)
+{
+	fprintf(file, "************************************\n");
+	fprintf(file, "* Vulkan vertex buffers debug info *\n");
+	fprintf(file, "************************************\n");
+
+	fprintf(file, "Collection name: %s\n", vertex_buffers->name);
+
+	fprintf(file, "\n");
+
+	if (!vertex_buffers->index_buffer.buffer)
+	{
+		fprintf(file, "Index buffer\t\t\t\t= VK_NULL_HANDLE\n");
+	}
+	else { fprintf(file, "Index buffer\t\t\t\t= %p\n", vertex_buffers->index_buffer.buffer); }
+	if (!vertex_buffers->index_buffer.allocation)
+	{
+		fprintf(file, "Index allocation\t\t\t= VK_NULL_HANDLE\n");
+	}
+	else
+	{
+		fprintf(file, "Index allocation\t\t\t= %p\n",
+			vertex_buffers->index_buffer.allocation);
+	}
+
+	fprintf(file, "Number of vertex buffers\t\t= %u\n", vertex_buffers->num_buffers);
+	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
+	{
+		if (!vertex_buffers->buffers[i].buffer)
+		{
+			fprintf(file, " ---> Buffer %u\t\t\t\t= VK_NULL_HANDLE\n", i);
+		}
+		else
+		{
+			fprintf(file, " ---> Buffer %u\t\t\t\t= %p\n", i,
+				vertex_buffers->buffers[i].buffer);
+		}
+		if (!vertex_buffers->buffers[i].allocation)
+		{
+			fprintf(file, " ---> Allocation %u\t\t\t= NULL\n", i);
+		}
+		else
+		{
+			fprintf(file, " ---> Allocation %u\t\t\t= %p\n", i,
+				vertex_buffers->buffers[i].allocation);
+		}
 	}
 }
 #endif

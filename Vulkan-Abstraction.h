@@ -313,7 +313,12 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_util_callback(
 char *vka_debug_get_severity(VkDebugUtilsMessageSeverityFlagBitsEXT severity);
 char *vka_debug_get_type(VkDebugUtilsMessageTypeFlagsEXT type);
 void vka_print_vulkan(FILE *file, vka_vulkan_t *vulkan);
+void vka_print_command_buffer(FILE *file, vka_command_buffer_t *command_buffer);
+void vka_print_shader(FILE *file, vka_shader_t *shader);
 void vka_print_pipeline(FILE *file, vka_pipeline_t *pipeline);
+void vka_print_allocation(FILE *file, vka_allocation_t *allocation);
+void vka_print_buffer(FILE *file, vka_buffer_t *buffer);
+void vka_print_vertex_buffers(FILE *file, vka_vertex_buffers_t *vertex_buffers);
 #endif
 
 #endif
