@@ -22,6 +22,9 @@ For debug, define VKA_DEBUG when compiling.
 - Command buffers:
     - Begin, end, submit
 
+- Buffers:
+    - Create, destroy, bind memory
+
 - Rendering:
     - Dynamic rendering - begin, end
     - Dynamic state - set viewport and scissor
@@ -53,7 +56,7 @@ Follow this pattern:
     - vka\_vulkan\_t \*
     - vka\_X\_t \*
 
-Where applicable, vka\_create\_X() functions will also destroy old resources - if the creation fails, the old resource will still be valid.
+Where applicable, vka\_create\_X() functions will also destroy old resources - if the creation fails, the old resource will still be valid. Applies to shaders, pipelines and the swapchain.
 
 Functional containers:
 
@@ -65,7 +68,11 @@ Functional containers:
 
 - vka\_shader\_t: Mostly a wrapper for a path and a shader module - managed by pipelines but can be standalone, too
 
-- vka\_allocation\_t: Container for memory allocation, as well as mapped memory.
+- vka\_allocation\_t: Container for memory allocation, as well as mapped memory
+
+- vka\_buffer\_t: Contains a VkBuffer, and a pointer to the relevant memory allocation
+
+- vka\_vertex\_buffers\_t: Container and management for several vka\_buffer\_t structs, for convenience
 
 Information containers:
 

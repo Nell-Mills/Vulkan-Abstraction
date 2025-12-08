@@ -1655,6 +1655,116 @@ void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_info_t
 		image_info->dst_stage_mask, 0, 0, NULL, 0, NULL, 1, &image_barrier);
 }
 
+/***********
+ * Buffers *
+ ***********/
+
+int vka_create_buffer(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
+{
+	if (!buffer->size)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Buffer \"%s\" size is 0.", buffer->name);
+	}
+
+	if (!buffer->usage)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Buffer \"%s\" has no usage flags.", buffer->name);
+	}
+
+	VkBufferCreateInfo buffer_info;
+	memset(&buffer_info, 0, sizeof(buffer_info));
+	buffer_info.sType			= VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer_info.pNext			= NULL;
+	buffer_info.flags			= 0;
+	buffer_info.size			= buffer->size;
+	buffer_info.usage			= buffer->usage;
+	buffer_info.sharingMode			= VK_SHARING_MODE_EXCLUSIVE;
+	buffer_info.queueFamilyIndexCount	= 0;
+	buffer_info.pQueueFamilyIndices		= NULL;
+
+	if (vkCreateBuffer(vulkan->device, &buffer_info, NULL, &(buffer->buffer)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not create buffer \"%s\".", buffer->name);
+		return -1;
+	}
+
+	vkGetBufferMemoryRequirements(vulkan->device, buffer->buffer, &(buffer->requirements));
+
+	return 0;
+}
+
+void vka_destroy_buffer(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
+{
+	if (buffer->buffer)
+	{
+		vkDestroyBuffer(vulkan->device, buffer->buffer, NULL);
+		buffer->buffer = VK_NULL_HANDLE;
+	}
+}
+
+int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
+{
+	if (vkBindBufferMemory(vulkan->device, buffer->buffer,
+		buffer->allocation->memory, buffer->offset) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Could not bind memory for buffer \"%s\".", buffer->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+/******************
+ * Vertex buffers *
+ ******************/
+
+int vka_create_vertex_buffers(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers)
+{
+	if (vertex_buffers->num_buffers > VKA_MAX_VERTEX_ATTRIBUTES)
+	{
+		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			"Vertex buffer collection \"%s\" has too many buffers.",
+			vertex_buffers->name);
+		return -1;
+	}
+
+	if (vka_create_buffer(vulkan, &(vertex_buffers->index_buffer))) { return -1; }
+
+	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
+	{
+		if (vka_create_buffer(vulkan, &(vertex_buffers->buffers[i]))) { return -1; }
+	}
+
+	return 0;
+}
+
+void vka_destroy_vertex_buffers(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers)
+{
+	vka_destroy_buffer(vulkan, &(vertex_buffers->index_buffer));
+
+	// Destroy all possible vertex buffers:
+	for (uint32_t i = 0; i < VKA_MAX_VERTEX_ATTRIBUTES; i++)
+	{
+		vka_destroy_buffer(vulkan, &(vertex_buffers->buffers[i]));
+	}
+}
+
+int vka_bind_vertex_buffers_memory(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers)
+{
+	if (vka_bind_buffer_memory(vulkan, &(vertex_buffers->index_buffer))) { return -1; }
+
+	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
+	{
+		if (vka_bind_buffer_memory(vulkan, &(vertex_buffers->buffers[i]))) { return -1; }
+	}
+
+	return 0;
+}
+
 /*************
  * Rendering *
  *************/
@@ -1740,6 +1850,31 @@ void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *r
 void vka_set_scissor(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
 {
 	vkCmdSetScissor(command_buffer->buffer, 0, 1, &(render_info->scissor_area));
+}
+
+void vka_bind_vertex_buffers(vka_command_buffer_t *command_buffer,
+			vka_vertex_buffers_t *vertex_buffers)
+{
+	VkBuffer buffers[VKA_MAX_VERTEX_ATTRIBUTES];
+	VkDeviceSize offsets[VKA_MAX_VERTEX_ATTRIBUTES];
+	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
+	{
+		buffers[i] = vertex_buffers->buffers[i].buffer;
+		offsets[i] = vertex_buffers->offsets[i];
+	}
+
+	vkCmdBindVertexBuffers(command_buffer->buffer, 0,
+		vertex_buffers->num_buffers, buffers, offsets);
+
+	// Also binds index buffer:
+	vkCmdBindIndexBuffer(command_buffer->buffer, vertex_buffers->index_buffer.buffer,
+			vertex_buffers->index_offset, vertex_buffers->index_type);
+}
+
+void vka_draw_indexed(vka_command_buffer_t *command_buffer, uint32_t num_indices,
+				uint32_t index_offset, int32_t vertex_offset)
+{
+	vkCmdDrawIndexed(command_buffer->buffer, num_indices, 1, index_offset, vertex_offset, 0);
 }
 
 int vka_present_image(vka_vulkan_t *vulkan)
