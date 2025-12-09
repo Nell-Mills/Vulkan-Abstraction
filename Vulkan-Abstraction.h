@@ -94,6 +94,7 @@ typedef struct
 	/*---------------*
 	 * Configuration *
 	 *---------------*/
+	uint8_t window_resizable;
 	int minimum_window_width;
 	int minimum_window_height;
 

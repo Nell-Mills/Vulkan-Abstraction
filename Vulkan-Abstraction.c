@@ -151,8 +151,10 @@ int vka_create_window(vka_vulkan_t *vulkan)
 		return -1;
 	}
 
+	SDL_WindowFlags window_flags = SDL_WINDOW_VULKAN;
+	if (vulkan->window_resizable) { window_flags |= SDL_WINDOW_RESIZABLE; }
 	vulkan->window = SDL_CreateWindow(vulkan->name, vulkan->minimum_window_width,
-		vulkan->minimum_window_height, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+					vulkan->minimum_window_height, window_flags);
 	if (!vulkan->window)
 	{
 		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
