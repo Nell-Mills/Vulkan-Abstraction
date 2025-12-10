@@ -146,7 +146,7 @@ int vka_create_window(vka_vulkan_t *vulkan)
 {
 	if (SDL_Init(SDL_INIT_VIDEO) != true)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not initialise SDL -> %s.", SDL_GetError());
 		return -1;
 	}
@@ -157,14 +157,14 @@ int vka_create_window(vka_vulkan_t *vulkan)
 					vulkan->minimum_window_height, window_flags);
 	if (!vulkan->window)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not create window -> %s.", SDL_GetError());
 		return -1;
 	}
 
 	if (SDL_SetWindowFullscreenMode(vulkan->window, NULL) != true)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not set window fullscreen mode -> %s.", SDL_GetError());
 		return -1;
 	}
@@ -172,7 +172,7 @@ int vka_create_window(vka_vulkan_t *vulkan)
 	if (SDL_SetWindowMinimumSize(vulkan->window, vulkan->minimum_window_width,
 					vulkan->minimum_window_height) != true)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not set window minimum size -> %s.", SDL_GetError());
 		return -1;
 	}
@@ -209,7 +209,7 @@ int vka_create_instance(vka_vulkan_t *vulkan)
 	char **extensions = malloc(extension_count * sizeof(char *));
 	if (!extensions)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for extension names.");
 		return -1;
 	}
@@ -218,7 +218,7 @@ int vka_create_instance(vka_vulkan_t *vulkan)
 		extensions[i] = malloc(NM_MAX_NAME_LENGTH * sizeof(char));
 		if (!extensions[i])
 		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 				"Could not allocate memory for extension names.");
 			for (uint32_t j = 0; j < i; j++) { free(extensions[j]); }
 			free(extensions);
@@ -247,8 +247,7 @@ int vka_create_instance(vka_vulkan_t *vulkan)
 
 	if (vkCreateInstance(&instance_create_info, NULL, &(vulkan->instance)) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Could not create Vulkan instance.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not create Vulkan instance.");
 		vulkan->instance = VK_NULL_HANDLE;
 		for (uint32_t i = 0; i < extension_count; i++) { free(extensions[i]); }
 		free(extensions);
@@ -267,7 +266,7 @@ int vka_create_surface(vka_vulkan_t *vulkan)
 	if (SDL_Vulkan_CreateSurface(vulkan->window, vulkan->instance,
 				NULL, &(vulkan->surface)) != true)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not create surface -> %s.", SDL_GetError());
 		return -1;
 	}
@@ -280,7 +279,7 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	uint32_t num_physical_devices;
 	if (vkEnumeratePhysicalDevices(vulkan->instance, &num_physical_devices, NULL) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not enumerate physical devices.");
 		return -1;
 	}
@@ -289,7 +288,7 @@ int vka_create_device(vka_vulkan_t *vulkan)
 						sizeof(VkPhysicalDevice));
 	if (!physical_devices)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for physical device array.");
 		return -1;
 	}
@@ -297,7 +296,7 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	if (vkEnumeratePhysicalDevices(vulkan->instance, &num_physical_devices,
 					physical_devices) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not get array of physical devices.");
 		free(physical_devices);
 		return -1;
@@ -329,8 +328,7 @@ int vka_create_device(vka_vulkan_t *vulkan)
 
 	if (best_score < 0)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"No suitable physical device found.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "No suitable physical device found.");
 		return -1;
 	}
 
@@ -345,7 +343,7 @@ int vka_create_device(vka_vulkan_t *vulkan)
 					sizeof(VkDeviceQueueCreateInfo));
 	if (!queue_info)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for device queue info.");
 		return -1;
 	}
@@ -395,7 +393,7 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	if (vkCreateDevice(vulkan->physical_device, &device_info, NULL,
 				&(vulkan->device)) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH, "Could not create device.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not create device.");
 		free(queue_info);
 		return -1;
 	}
@@ -408,8 +406,7 @@ int vka_create_device(vka_vulkan_t *vulkan)
 					&(vulkan->graphics_queue));
 	if (!vulkan->graphics_queue)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Could not retrieve graphics queue.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not retrieve graphics queue.");
 		return -1;
 	}
 
@@ -417,8 +414,7 @@ int vka_create_device(vka_vulkan_t *vulkan)
 					&(vulkan->present_queue));
 	if (!vulkan->present_queue)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Could not retrieve present queue.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not retrieve present queue.");
 		return -1;
 	}
 
@@ -438,7 +434,7 @@ int vka_create_semaphores(vka_vulkan_t *vulkan)
 		if (vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
 			&(vulkan->image_available[i])) != VK_SUCCESS)
 		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 				"Could not create semaphore: \"Image available\".");
 			return -1;
 		}
@@ -446,7 +442,7 @@ int vka_create_semaphores(vka_vulkan_t *vulkan)
 		if (vkCreateSemaphore(vulkan->device, &semaphore_info, NULL,
 			&(vulkan->render_complete[i])) != VK_SUCCESS)
 		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 				"Could not create semaphore: \"Render complete\".");
 			return -1;
 		}
@@ -469,8 +465,7 @@ int vka_create_command_pool(vka_vulkan_t *vulkan)
 	if (vkCreateCommandPool(vulkan->device, &pool_info, NULL,
 			&(vulkan->command_pool)) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-				"Could not create command pool.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not create command pool.");
 		return -1;
 	}
 
@@ -530,7 +525,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physical_device, vulkan->surface,
 							&num_formats, NULL) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not enumerate surface formats.");
 		return -1;
 	}
@@ -538,7 +533,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	VkSurfaceFormatKHR *formats = malloc(num_formats * sizeof(VkSurfaceFormatKHR));
 	if (!formats)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for array of surface formats.");
 		return -1;
 	}
@@ -546,7 +541,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physical_device, vulkan->surface,
 						&num_formats, formats) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not get array of surface formats.");
 		free(formats);
 		return -1;
@@ -554,8 +549,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 
 	if (num_formats < 1)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"No surface formats to choose from.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "No surface formats to choose from.");
 		free(formats);
 		return -1;
 	}
@@ -584,7 +578,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->physical_device, vulkan->surface,
 							&num_modes, NULL) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not enumerate surface present modes.");
 		return -1;
 	}
@@ -592,7 +586,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	VkPresentModeKHR *modes = malloc(num_modes * sizeof(VkPresentModeKHR));
 	if (!modes)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for array of surface present modes.");
 		return -1;
 	}
@@ -600,7 +594,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->physical_device, vulkan->surface,
 							&num_modes, modes) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not get array of surface present modes.");
 		free(modes);
 		return -1;
@@ -608,7 +602,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 
 	if (num_modes < 1)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"No surface present modes to choose from.");
 		free(modes);
 		return -1;
@@ -630,7 +624,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vulkan->physical_device, vulkan->surface,
 								&capabilities) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not get surface capabilities for the device.");
 		return -1;
 	}
@@ -708,7 +702,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (vkCreateSwapchainKHR(vulkan->device, &swapchain_info, NULL,
 				&(vulkan->swapchain)) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH, "Could not create swapchain.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not create swapchain.");
 		vulkan->swapchain = old_swapchain;
 		return -1;
 	}
@@ -721,7 +715,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain,
 		&(vulkan->num_swapchain_images), NULL) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not get number of swapchain images.");
 		return -1;
 	}
@@ -729,7 +723,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	vulkan->swapchain_images = malloc(vulkan->num_swapchain_images * sizeof(VkImage));
 	if (!vulkan->swapchain_images)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for swapchain images.");
 		return -1;
 	}
@@ -741,15 +735,14 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	if (vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain,
 		&(vulkan->num_swapchain_images), vulkan->swapchain_images) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-				"Could not get swapchain images.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not get swapchain images.");
 		return -1;
 	}
 
 	vulkan->swapchain_image_views = malloc(vulkan->num_swapchain_images * sizeof(VkImageView));
 	if (!vulkan->swapchain_image_views)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for swapchain image views.");
 		return -1;
 	}
@@ -781,7 +774,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 		if (vkCreateImageView(vulkan->device, &view_info, NULL,
 			&(vulkan->swapchain_image_views[i])) != VK_SUCCESS)
 		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 				"Could not create swapchain image view.");
 			return -1;
 		}
@@ -832,7 +825,7 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	if (vkEnumerateDeviceExtensionProperties(physical_device, NULL,
 			&num_supported_extensions, NULL) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not enumerate extensions for physical device: %s.",
 			get_properties.properties.deviceName);
 		return -1;
@@ -842,7 +835,7 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 							sizeof(VkExtensionProperties));
 	if (!supported_extensions)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for extensions for physical device: %s.",
 			get_properties.properties.deviceName);
 		return -1;
@@ -851,7 +844,7 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	if (vkEnumerateDeviceExtensionProperties(physical_device, NULL,
 		&num_supported_extensions, supported_extensions) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not get array of supported extensions for physical device: %s.",
 			get_properties.properties.deviceName);
 		free(supported_extensions);
@@ -935,7 +928,7 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	uint8_t *desired_features_array = malloc(total_size);
 	if (!desired_features_array)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for feature comparison for device: %s.",
 			get_properties.properties.deviceName);
 		return -1;
@@ -944,7 +937,7 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	uint8_t *supported_features_array = malloc(total_size);
 	if (!supported_features_array)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for feature comparison for device: %s.",
 			get_properties.properties.deviceName);
 		free(desired_features_array);
@@ -985,7 +978,7 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 					sizeof(VkQueueFamilyProperties));
 	if (!queue_families)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for queue families for device: %s.",
 			get_properties.properties.deviceName);
 		return -1;
@@ -1061,7 +1054,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		if (vkCreatePipelineLayout(vulkan->device, &pipeline_layout_info,
 					NULL, &(pipeline->layout)) != VK_SUCCESS)
 		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 				"Could not create pipeline layout for \"%s\".", pipeline->name);
 			return -1;
 		}
@@ -1098,7 +1091,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		if (vkCreateComputePipelines(vulkan->device, VK_NULL_HANDLE, 1, &c_pipeline_info,
 								NULL, &c_temp) != VK_SUCCESS)
 		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 				"Could not create compute pipeline \"%s\".", pipeline->name);
 			return -1;
 		}
@@ -1117,7 +1110,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	{
 		if (pipeline->strides[i] == 0)
 		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 				"Vertex binding stride %u for pipeline \"%s\" is zero.",
 				i, pipeline->name);
 			return -1;
@@ -1127,14 +1120,14 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	{
 		if (pipeline->bindings[i] >= pipeline->num_vertex_bindings)
 		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 				"Vertex attribute binding %u for pipeline \"%s\" is out of bounds.",
 				i, pipeline->name);
 			return -1;
 		}
 		if (pipeline->formats[i] == VK_FORMAT_UNDEFINED)
 		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 				"Vertex attribute %u for pipeline \"%s\" has no format.",
 				i, pipeline->name);
 			return -1;
@@ -1364,7 +1357,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	if (vkCreateGraphicsPipelines(vulkan->device, VK_NULL_HANDLE, 1,
 			&pipeline_info, NULL, &temp) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not create pipeline \"%s\".", pipeline->name);
 		return -1;
 	}
@@ -1412,14 +1405,14 @@ int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
 	FILE *shader_file = fopen(shader->path, "rb");
 	if (!shader_file)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not open shader file \"%s\".", shader->path);
 		return -1;
 	}
 
 	if (fseek(shader_file, 0, SEEK_END))
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not navigate shader file \"%s\".", shader->path);
 		fclose(shader_file);
 		return -1;
@@ -1427,14 +1420,14 @@ int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
 	long file_size = ftell(shader_file);
 	if (file_size == -1)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not get size of shader file \"%s\".", shader->path);
 		fclose(shader_file);
 		return -1;
 	}
 	if (file_size % 4)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Shader file \"%s\" size is not a multiple of 4 bytes.", shader->path);
 		fclose(shader_file);
 		return -1;
@@ -1445,7 +1438,7 @@ int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
 	uint32_t *shader_code = malloc(code_size);
 	if (!shader_code)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for shader code from file \"%s\".",
 			shader->path);
 		fclose(shader_file);
@@ -1454,7 +1447,7 @@ int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
 
 	if (fread(shader_code, 4, code_size / 4, shader_file) != (code_size / 4))
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not read shader code from file \"%s\".", shader->path);
 		free(shader_code);
 		fclose(shader_file);
@@ -1475,7 +1468,7 @@ int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
 	VkShaderModule temp = VK_NULL_HANDLE;
 	if (vkCreateShaderModule(vulkan->device, &shader_module_info, NULL, &temp) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not create shader module for \"%s\".", shader->path);
 		free(shader_code);
 		return -1;
@@ -1503,6 +1496,8 @@ void vka_destroy_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
 
 int vka_create_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer)
 {
+	vka_destroy_command_buffer(vulkan, command_buffer);
+
 	VkCommandBufferAllocateInfo allocate_info;
 	memset(&allocate_info, 0, sizeof(allocate_info));
 	allocate_info.sType			= VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -1514,7 +1509,7 @@ int vka_create_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *comman
 	if (vkAllocateCommandBuffers(vulkan->device, &allocate_info,
 			&(command_buffer->buffer)) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not create command buffer \"%s\".", command_buffer->name);
 		return -1;
 	}
@@ -1529,7 +1524,7 @@ int vka_create_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *comman
 	if (vkCreateFence(vulkan->device, &fence_info, NULL,
 		&(command_buffer->fence)) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not create fence \"%s\".", command_buffer->name);
 		return -1;
 	}
@@ -1565,7 +1560,7 @@ int vka_begin_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command
 
 	if (vkBeginCommandBuffer(command_buffer->buffer, &begin_info) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not begin command buffer \"%s\".", command_buffer->name);
 		return -1;
 	}
@@ -1577,7 +1572,7 @@ int vka_end_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_b
 {
 	if (vkEndCommandBuffer(command_buffer->buffer) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not end command buffer \"%s\".", command_buffer->name);
 		return -1;
 	}
@@ -1602,7 +1597,7 @@ int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *comman
 	if (vkQueueSubmit(*(command_buffer->queue), 1, &submit_info,
 			command_buffer->fence) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not submit command buffer \"%s\".", command_buffer->name);
 		return -1;
 	}
@@ -1615,14 +1610,14 @@ int vka_wait_for_fence(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffe
 	if (vkWaitForFences(vulkan->device, 1, &(command_buffer->fence),
 				VK_TRUE, UINT32_MAX) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not wait for fence \"%s\".", command_buffer->name);
 		return -1;
 	}
 
 	if (vkResetFences(vulkan->device, 1, &(command_buffer->fence)) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not reset fence \"%s\".", command_buffer->name);
 		return -1;
 	}
@@ -1665,14 +1660,16 @@ int vka_create_buffer(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
 {
 	if (!buffer->size)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Buffer \"%s\" size is 0.", buffer->name);
+		return -1;
 	}
 
 	if (!buffer->usage)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Buffer \"%s\" has no usage flags.", buffer->name);
+		return -1;
 	}
 
 	VkBufferCreateInfo buffer_info;
@@ -1686,14 +1683,13 @@ int vka_create_buffer(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
 	buffer_info.queueFamilyIndexCount	= 0;
 	buffer_info.pQueueFamilyIndices		= NULL;
 
+	vka_destroy_buffer(vulkan, buffer);
 	if (vkCreateBuffer(vulkan->device, &buffer_info, NULL, &(buffer->buffer)) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not create buffer \"%s\".", buffer->name);
 		return -1;
 	}
-
-	vkGetBufferMemoryRequirements(vulkan->device, buffer->buffer, &(buffer->requirements));
 
 	return 0;
 }
@@ -1707,12 +1703,53 @@ void vka_destroy_buffer(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
 	}
 }
 
+int vka_get_buffer_requirements(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
+{
+	if (!buffer->allocation)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Buffer \"%s\" has no valid allocation.", buffer->name);
+		return -1;
+	}
+
+	if (buffer->allocation->memory)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Buffer \"%s\" already has memory allocated.", buffer->name);
+		return -1;
+	}
+
+	// Get memory requirements and add to current allocation information:
+	VkMemoryRequirements requirements;
+	vkGetBufferMemoryRequirements(vulkan->device, buffer->buffer, &requirements);
+
+	if (!buffer->allocation->requirements.memoryTypeBits)
+	{
+		buffer->allocation->requirements.memoryTypeBits = requirements.memoryTypeBits;
+		buffer->allocation->requirements.alignment = requirements.alignment;
+	}
+
+	if (buffer->allocation->requirements.memoryTypeBits != requirements.memoryTypeBits)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Memory type bits for buffer \"%s\" don't match allocation \"%s\".",
+			buffer->name, buffer->allocation->name);
+		return -1;
+	}
+
+	// Set offset of current buffer to current accumulated memory size:
+	buffer->offset = buffer->allocation->requirements.size;
+	buffer->allocation->requirements.size += requirements.size;
+
+	return 0;
+}
+
 int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
 {
 	if (vkBindBufferMemory(vulkan->device, buffer->buffer,
 		buffer->allocation->memory, buffer->offset) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not bind memory for buffer \"%s\".", buffer->name);
 		return -1;
 	}
@@ -1720,94 +1757,20 @@ int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
 	return 0;
 }
 
-/******************
- * Vertex buffers *
- ******************/
-
-int vka_create_vertex_buffers(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers)
+void vka_copy_buffer(vka_command_buffer_t *command_buffer,
+	vka_buffer_t *source, vka_buffer_t *destination)
 {
-	if (vertex_buffers->num_buffers > VKA_MAX_VERTEX_ATTRIBUTES)
-	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Vertex buffer collection \"%s\" has too many buffers.",
-			vertex_buffers->name);
-		return -1;
-	}
+	// Choose size based on which buffer is smaller:
+	VkDeviceSize copy_size = source->size;
+	if (destination->size < source->size) { copy_size = destination->size; }
 
-	if (vka_create_buffer(vulkan, &(vertex_buffers->index_buffer))) { return -1; }
+	VkBufferCopy copy_info;
+	memset(&copy_info, 0, sizeof(copy_info));
+	copy_info.srcOffset	= 0;
+	copy_info.dstOffset	= 0;
+	copy_info.size		= copy_size;
 
-	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
-	{
-		if (vka_create_buffer(vulkan, &(vertex_buffers->buffers[i]))) { return -1; }
-	}
-
-	return 0;
-}
-
-void vka_destroy_vertex_buffers(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers)
-{
-	vka_destroy_buffer(vulkan, &(vertex_buffers->index_buffer));
-
-	// Destroy all possible vertex buffers:
-	for (uint32_t i = 0; i < VKA_MAX_VERTEX_ATTRIBUTES; i++)
-	{
-		vka_destroy_buffer(vulkan, &(vertex_buffers->buffers[i]));
-	}
-}
-
-int vka_bind_vertex_buffers_memory(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers)
-{
-	if (vka_bind_buffer_memory(vulkan, &(vertex_buffers->index_buffer))) { return -1; }
-
-	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
-	{
-		if (vka_bind_buffer_memory(vulkan, &(vertex_buffers->buffers[i]))) { return -1; }
-	}
-
-	return 0;
-}
-
-int vka_setup_vertex_buffers(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers)
-{
-	/* Expects the following to be set up beforehand:
-	 * Size members of index buffer and vertex buffers.
-	 * Reference to an (empty) allocation in the index buffer.
-	 *     This will be copied to the others. Memory will be allocated as well.
-	 * Number of vertex buffers. */
-
-	vka_allocation_t *allocation = vertex_buffers->index_buffer.allocation;
-	vertex_buffers->index_buffer.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-					VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
-	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
-	{
-		vertex_buffers->buffers[i].allocation = allocation;
-		vertex_buffers->buffers[i].usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-						VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	}
-
-	if (vka_create_vertex_buffers(vulkan, vertex_buffers)) { return -1; }
-
-	vertex_buffers->index_buffer.offset = 0;
-	vertex_buffers->buffers[0].offset = vertex_buffers->index_buffer.requirements.size;
-	for (uint32_t i = 1; i < vertex_buffers->num_buffers; i++)
-	{
-		vertex_buffers->buffers[i].offset = vertex_buffers->buffers[i - 1].offset +
-					vertex_buffers->buffers[i - 1].requirements.size;
-	}
-
-	memcpy(&(allocation->requirements), &(vertex_buffers->index_buffer.requirements),
-						sizeof(allocation->requirements));
-	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
-	{
-		allocation->requirements.size += vertex_buffers->buffers[i].requirements.size;
-	}
-	allocation->properties[0] = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
-	if (vka_create_allocation(vulkan, allocation)) { return -1; }
-	if (vka_bind_vertex_buffers_memory(vulkan, vertex_buffers)) { return -1; }
-
-	return 0;
+	vkCmdCopyBuffer(command_buffer->buffer, source->buffer, destination->buffer, 1, &copy_info);
 }
 
 /*************
@@ -1897,23 +1860,24 @@ void vka_set_scissor(vka_command_buffer_t *command_buffer, vka_render_info_t *re
 	vkCmdSetScissor(command_buffer->buffer, 0, 1, &(render_info->scissor_area));
 }
 
-void vka_bind_vertex_buffers(vka_command_buffer_t *command_buffer,
-			vka_vertex_buffers_t *vertex_buffers)
+void vka_bind_vertex_buffers(vka_command_buffer_t *command_buffer, vka_buffer_t *index_buffer,
+				uint32_t num_vertex_buffers, vka_buffer_t vertex_buffers[])
 {
 	VkBuffer buffers[VKA_MAX_VERTEX_ATTRIBUTES];
 	VkDeviceSize offsets[VKA_MAX_VERTEX_ATTRIBUTES];
-	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
+	for (uint32_t i = 0; i < num_vertex_buffers; i++)
 	{
-		buffers[i] = vertex_buffers->buffers[i].buffer;
-		offsets[i] = vertex_buffers->offsets[i];
+		buffers[i] = vertex_buffers[i].buffer;
+		offsets[i] = 0;
 	}
 
-	vkCmdBindVertexBuffers(command_buffer->buffer, 0,
-		vertex_buffers->num_buffers, buffers, offsets);
+	vkCmdBindVertexBuffers(command_buffer->buffer, 0, num_vertex_buffers, buffers, offsets);
 
-	// Also binds index buffer:
-	vkCmdBindIndexBuffer(command_buffer->buffer, vertex_buffers->index_buffer.buffer,
-			vertex_buffers->index_offset, vertex_buffers->index_type);
+	if (index_buffer)
+	{
+		vkCmdBindIndexBuffer(command_buffer->buffer, index_buffer->buffer, 0,
+							index_buffer->index_type);
+	}
 }
 
 void vka_draw_indexed(vka_command_buffer_t *command_buffer, uint32_t num_indices,
@@ -1945,7 +1909,7 @@ int vka_present_image(vka_vulkan_t *vulkan)
 		}
 		else
 		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 				"Could not present swapchain image.");
 			return -1;
 		}
@@ -1962,14 +1926,14 @@ int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 {
 	if (!allocation->requirements.size)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Trying to allocate memory of size 0 for \"%s\".", allocation->name);
 		return -1;
 	}
 
 	if (!allocation->properties[0])
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Trying to allocate memory with no first choice of properties for \"%s\".",
 			allocation->name);
 		return -1;
@@ -2010,7 +1974,7 @@ int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 
 	if (!found_suitable)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not find suitable memory type for \"%s\".", allocation->name);
 		return -1;
 	}
@@ -2018,7 +1982,7 @@ int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 	if (vkAllocateMemory(vulkan->device, &allocate_info, NULL,
 			&(allocation->memory)) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for \"%s\".", allocation->name);
 		return -1;
 	}
@@ -2035,6 +1999,8 @@ void vka_destroy_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 		vkFreeMemory(vulkan->device, allocation->memory, NULL);
 		allocation->memory = VK_NULL_HANDLE;
 	}
+
+	memset(&(allocation->requirements), 0, sizeof(allocation->requirements));
 }
 
 int vka_map_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
@@ -2045,7 +2011,7 @@ int vka_map_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 	if (vkMapMemory(vulkan->device, allocation->memory, allocation->map_offset,
 			map_size, 0, &(allocation->mapped_data)) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not map memory for \"%s\".", allocation->name);
 		return -1;
 	}
@@ -2087,7 +2053,7 @@ int vka_get_next_swapchain_image(vka_vulkan_t *vulkan)
 		}
 		else
 		{
-			snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 				"Could not acquire next swapchain image.");
 			return -1;
 		}
@@ -2102,7 +2068,7 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	uint32_t num_layers;
 	if (vkEnumerateInstanceLayerProperties(&num_layers, NULL) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not enumerate instance layers.");
 		return -1;
 	}
@@ -2110,14 +2076,13 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	VkLayerProperties *layers = malloc(num_layers * sizeof(VkLayerProperties));
 	if (!layers)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for instance layer properties.");
 		return -1;
 	}
 	if (vkEnumerateInstanceLayerProperties(&num_layers, layers) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-				"Could not get instance layers.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not get instance layers.");
 		free(layers);
 		return -1;
 	}
@@ -2133,7 +2098,7 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	}
 	if (!layer_supported)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Required layer \"VK_LAYER_KHRONOS_validation\" not supported.");
 		free(layers);
 		return -1;
@@ -2144,7 +2109,7 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	uint32_t num_extensions;
 	if (vkEnumerateInstanceExtensionProperties(NULL, &num_extensions, NULL) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not enumerate instance extensions.");
 		return -1;
 	}
@@ -2152,14 +2117,13 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	VkExtensionProperties *extensions = malloc(num_extensions * sizeof(VkExtensionProperties));
 	if (!extensions)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not allocate memory for instance extension properties.");
 		return -1;
 	}
 	if (vkEnumerateInstanceExtensionProperties(NULL, &num_extensions, extensions) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Could not get instance extensions.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not get instance extensions.");
 		free(extensions);
 		return -1;
 	}
@@ -2175,7 +2139,7 @@ int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
 	}
 	if (!extension_supported)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Required extension \"%s\" not supported.",
 			VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		free(extensions);
@@ -2204,8 +2168,7 @@ int vka_create_debug_messenger(vka_vulkan_t *vulkan)
 	if (vkCreateDebugUtilsMessengerEXT(vulkan->instance, &debug_info,
 			NULL, &(vulkan->debug_messenger)) != VK_SUCCESS)
 	{
-		snprintf(vulkan->error_message, NM_MAX_ERROR_LENGTH,
-			"Could not create debug messenger.");
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not create debug messenger.");
 		return -1;
 	}
 
@@ -2570,54 +2533,5 @@ void vka_print_buffer(FILE *file, vka_buffer_t *buffer)
 	else { fprintf(file, "Buffer\t\t\t\t\t= %p\n", buffer->buffer); }
 	if (!buffer->allocation) { fprintf(file, "Allocation\t\t\t\t= NULL\n"); }
 	else { fprintf(file, "Allocation\t\t\t\t= %p\n", buffer->allocation); }
-}
-
-void vka_print_vertex_buffers(FILE *file, vka_vertex_buffers_t *vertex_buffers)
-{
-	fprintf(file, "************************************\n");
-	fprintf(file, "* Vulkan vertex buffers debug info *\n");
-	fprintf(file, "************************************\n");
-
-	fprintf(file, "Collection name: %s\n", vertex_buffers->name);
-
-	fprintf(file, "\n");
-
-	if (!vertex_buffers->index_buffer.buffer)
-	{
-		fprintf(file, "Index buffer\t\t\t\t= VK_NULL_HANDLE\n");
-	}
-	else { fprintf(file, "Index buffer\t\t\t\t= %p\n", vertex_buffers->index_buffer.buffer); }
-	if (!vertex_buffers->index_buffer.allocation)
-	{
-		fprintf(file, "Index allocation\t\t\t= VK_NULL_HANDLE\n");
-	}
-	else
-	{
-		fprintf(file, "Index allocation\t\t\t= %p\n",
-			vertex_buffers->index_buffer.allocation);
-	}
-
-	fprintf(file, "Number of vertex buffers\t\t= %u\n", vertex_buffers->num_buffers);
-	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
-	{
-		if (!vertex_buffers->buffers[i].buffer)
-		{
-			fprintf(file, " ---> Buffer %u\t\t\t\t= VK_NULL_HANDLE\n", i);
-		}
-		else
-		{
-			fprintf(file, " ---> Buffer %u\t\t\t\t= %p\n", i,
-				vertex_buffers->buffers[i].buffer);
-		}
-		if (!vertex_buffers->buffers[i].allocation)
-		{
-			fprintf(file, " ---> Allocation %u\t\t\t= NULL\n", i);
-		}
-		else
-		{
-			fprintf(file, " ---> Allocation %u\t\t\t= %p\n", i,
-				vertex_buffers->buffers[i].allocation);
-		}
-	}
 }
 #endif

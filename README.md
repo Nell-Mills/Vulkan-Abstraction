@@ -56,7 +56,7 @@ Follow this pattern:
     - vka\_vulkan\_t \*
     - vka\_X\_t \*
 
-Where applicable, vka\_create\_X() functions will also destroy old resources - if the creation fails, the old resource will still be valid. Applies to shaders, pipelines and the swapchain.
+Where applicable, vka\_create\_X() functions will also destroy old resources. For shaders, pipelines and the swapchain: if the creation fails, the old resource will still be valid.
 
 Functional containers:
 
@@ -71,8 +71,6 @@ Functional containers:
 - vka\_allocation\_t: Container for memory allocation, as well as mapped memory
 
 - vka\_buffer\_t: Contains a VkBuffer, and a pointer to the relevant memory allocation
-
-- vka\_vertex\_buffers\_t: Container and management for several vka\_buffer\_t structs, for convenience
 
 Information containers:
 
