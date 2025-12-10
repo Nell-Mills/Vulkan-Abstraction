@@ -1,13 +1,12 @@
 #ifndef VULKAN_ABSTRACTION_H
 #define VULKAN_ABSTRACTION_H
 
-#include <NM-Config/Config.h>
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <NM-Config/Config.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <Volk/volk.h>
@@ -280,6 +279,7 @@ int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 int vka_create_vertex_buffers(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers);
 void vka_destroy_vertex_buffers(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers);
 int vka_bind_vertex_buffers_memory(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers);
+int vka_setup_vertex_buffers(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers);
 
 // Rendering:
 void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);

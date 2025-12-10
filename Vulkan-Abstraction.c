@@ -1767,6 +1767,49 @@ int vka_bind_vertex_buffers_memory(vka_vulkan_t *vulkan, vka_vertex_buffers_t *v
 	return 0;
 }
 
+int vka_setup_vertex_buffers(vka_vulkan_t *vulkan, vka_vertex_buffers_t *vertex_buffers)
+{
+	/* Expects the following to be set up beforehand:
+	 * Size members of index buffer and vertex buffers.
+	 * Reference to an (empty) allocation in the index buffer.
+	 *     This will be copied to the others. Memory will be allocated as well.
+	 * Number of vertex buffers. */
+
+	vka_allocation_t *allocation = vertex_buffers->index_buffer.allocation;
+	vertex_buffers->index_buffer.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+					VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
+	{
+		vertex_buffers->buffers[i].allocation = allocation;
+		vertex_buffers->buffers[i].usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+						VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	}
+
+	if (vka_create_vertex_buffers(vulkan, vertex_buffers)) { return -1; }
+
+	vertex_buffers->index_buffer.offset = 0;
+	vertex_buffers->buffers[0].offset = vertex_buffers->index_buffer.requirements.size;
+	for (uint32_t i = 1; i < vertex_buffers->num_buffers; i++)
+	{
+		vertex_buffers->buffers[i].offset = vertex_buffers->buffers[i - 1].offset +
+					vertex_buffers->buffers[i - 1].requirements.size;
+	}
+
+	memcpy(&(allocation->requirements), &(vertex_buffers->index_buffer.requirements),
+						sizeof(allocation->requirements));
+	for (uint32_t i = 0; i < vertex_buffers->num_buffers; i++)
+	{
+		allocation->requirements.size += vertex_buffers->buffers[i].requirements.size;
+	}
+	allocation->properties[0] = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+	if (vka_create_allocation(vulkan, allocation)) { return -1; }
+	if (vka_bind_vertex_buffers_memory(vulkan, vertex_buffers)) { return -1; }
+
+	return 0;
+}
+
 /*************
  * Rendering *
  *************/
