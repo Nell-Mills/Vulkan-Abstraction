@@ -26,8 +26,12 @@
 #define VKA_SHADER_TYPE_FRAGMENT	1
 #define VKA_SHADER_TYPE_COMPUTE		2
 
-#define VKA_BUFFER_USAGE_INDEX VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
-#define VKA_BUFFER_USAGE_VERTEX VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+#define VKA_BUFFER_USAGE_INDEX VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+#define VKA_BUFFER_USAGE_VERTEX VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+#define VKA_BUFFER_USAGE_UNIFORM VK_BUFFER_USAGE_TRANSFER_DST_BIT | \
+				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+#define VKA_BUFFER_USAGE_STORAGE VK_BUFFER_USAGE_TRANSFER_DST_BIT | \
+				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
 #define VKA_BUFFER_USAGE_STAGING VK_BUFFER_USAGE_TRANSFER_SRC_BIT
 
 #define VKA_MEMORY_HOST VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
@@ -117,6 +121,38 @@ typedef struct
 
 typedef struct
 {
+	char name[NM_MAX_NAME_LENGTH];
+	VkDescriptorPool pool;
+
+	/*---------------*
+	 * Configuration *
+	 *---------------*/
+	uint32_t max_sets;
+	uint32_t num_uniform_buffers;
+	uint32_t num_storage_buffers;
+	uint32_t num_storage_images;
+	uint32_t num_image_samplers;
+} vka_descriptor_pool_t;
+
+typedef struct
+{
+	char name[NM_MAX_NAME_LENGTH];
+	VkDescriptorSetLayout layout;
+	VkDescriptorSet set;
+	void **data;
+	vka_descriptor_pool_t *pool;
+
+	/*---------------*
+	 * Configuration *
+	 *---------------*/
+	uint32_t binding;
+	uint32_t count;
+	VkDescriptorType type;
+	VkShaderStageFlags stage_flags;
+} vka_descriptor_set_t;
+
+typedef struct
+{
 	char path[NM_MAX_PATH_LENGTH];
 	VkShaderModule shader;
 } vka_shader_t;
@@ -128,13 +164,17 @@ typedef struct
 	VkPipeline pipeline;
 	vka_shader_t shaders[3];
 
+	// These are created and updated automatically - don't touch.
+	VkDescriptorSetLayout *descriptor_layout_tracker;
+	VkDescriptorSet *descriptor_set_tracker;
+
 	/*---------------*
 	 * Configuration *
 	 *---------------*/
 	int is_compute_pipeline;
 
-	uint32_t num_descriptor_set_layouts;
-	VkDescriptorSetLayout *descriptor_set_layouts;
+	uint32_t num_descriptor_sets;
+	vka_descriptor_set_t **descriptor_sets;
 
 	// Vertex input:
 	uint32_t num_vertex_bindings;
@@ -186,11 +226,12 @@ typedef struct
 	char name[NM_MAX_NAME_LENGTH];
 	VkBuffer buffer;
 	vka_allocation_t *allocation;
+	void *data; // Intended for scene uniform buffer updates. Is NOT managed by buffer struct.
 
 	/*---------------*
 	 * Configuration *
 	 *---------------*/
-	VkDeviceSize size;		// Getting memory requirements overwrites this.
+	VkDeviceSize size;
 	VkDeviceSize offset;		// Offset inside allocation.
 	VkBufferUsageFlags usage;
 	VkIndexType index_type;		// For index buffer.
@@ -261,6 +302,14 @@ int vka_end_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_b
 int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 int vka_wait_for_fence(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 
+// Descriptors:
+int vka_create_descriptor_pool(vka_vulkan_t *vulkan, vka_descriptor_pool_t *descriptor_pool);
+void vka_destroy_descriptor_pool(vka_vulkan_t *vulkan, vka_descriptor_pool_t *descriptor_pool);
+int vka_create_descriptor_set_layout(vka_vulkan_t *vulkan, vka_descriptor_set_t *descriptor_set);
+void vka_destroy_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descriptor_set);
+int vka_allocate_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descriptor_set);
+int vka_update_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descriptor_set);
+
 // Images and image views:
 void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_info_t *image_info);
 
@@ -271,6 +320,7 @@ int vka_get_buffer_requirements(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 void vka_copy_buffer(vka_command_buffer_t *command_buffer,
 	vka_buffer_t *source, vka_buffer_t *destination);
+void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer);
 
 // Rendering:
 void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
@@ -279,6 +329,7 @@ void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *r
 void vka_set_scissor(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
 void vka_bind_vertex_buffers(vka_command_buffer_t *command_buffer, vka_buffer_t *index_buffer,
 				uint32_t num_vertex_buffers, vka_buffer_t vertex_buffers[]);
+void vka_bind_descriptor_sets(vka_command_buffer_t *command_buffer, vka_pipeline_t *pipeline);
 void vka_draw_indexed(vka_command_buffer_t *command_buffer, uint32_t num_indices,
 				uint32_t index_offset, int32_t vertex_offset);
 int vka_present_image(vka_vulkan_t *vulkan);
@@ -308,6 +359,7 @@ void vka_print_vulkan(FILE *file, vka_vulkan_t *vulkan);
 void vka_print_command_buffer(FILE *file, vka_command_buffer_t *command_buffer);
 void vka_print_shader(FILE *file, vka_shader_t *shader);
 void vka_print_pipeline(FILE *file, vka_pipeline_t *pipeline);
+void vka_print_descriptor_pool(FILE *file, vka_descriptor_pool_t *descriptor_pool);
 void vka_print_allocation(FILE *file, vka_allocation_t *allocation);
 void vka_print_buffer(FILE *file, vka_buffer_t *buffer);
 #endif

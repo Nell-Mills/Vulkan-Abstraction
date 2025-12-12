@@ -21,18 +21,32 @@ For debug, define VKA_DEBUG when compiling.
 
 - Command buffers:
     - Begin, end, submit
+    - Create, destroy and wait on fences
 
 - Buffers:
-    - Create, destroy, bind memory
+    - Create, destroy
+    - Bind memory, copy between buffers
+    - Update small buffers
 
 - Rendering:
     - Dynamic rendering - begin, end
     - Dynamic state - set viewport and scissor
+    - Bind vertex buffers and descriptor sets
+    - Draw indexed
     - Present swapchain image
 
 - Memory:
     - Basic allocation
     - Memory mapping
+
+- Descriptors:
+    - Create and destroy descriptor pool
+    - Create and destroy descriptor set layout
+    - Allocate descriptor sets
+    - Update descriptor sets
+
+- Images:
+    - Transition image layout
 
 ## Compilation:
 
@@ -71,6 +85,10 @@ Functional containers:
 - vka\_allocation\_t: Container for memory allocation, as well as mapped memory
 
 - vka\_buffer\_t: Contains a VkBuffer, and a pointer to the relevant memory allocation
+
+- vka\_descriptor\_pool\_t
+
+- vka\_descriptor\_set\_t: Container for a descriptor set and layout
 
 Information containers:
 

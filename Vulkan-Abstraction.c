@@ -1039,6 +1039,35 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 
 int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 {
+	if (pipeline->descriptor_sets)
+	{
+		if (!pipeline->descriptor_layout_tracker)
+		{
+			pipeline->descriptor_layout_tracker = malloc(pipeline->num_descriptor_sets *
+								sizeof(VkDescriptorSetLayout));
+		}
+		if (!pipeline->descriptor_set_tracker)
+		{
+			pipeline->descriptor_set_tracker = malloc(pipeline->num_descriptor_sets *
+									sizeof(VkDescriptorSet));
+		}
+
+		if (!pipeline->descriptor_layout_tracker || !pipeline->descriptor_set_tracker)
+		{
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+				"Could not allocate memory for descriptor set tracking for "
+				"pipeline \"%s\".", pipeline->name);
+			return -1;
+		}
+
+		for (uint32_t i = 0; i < pipeline->num_descriptor_sets; i++)
+		{
+			pipeline->descriptor_layout_tracker[i] =
+				pipeline->descriptor_sets[i]->layout;
+			pipeline->descriptor_set_tracker[i] = pipeline->descriptor_sets[i]->set;
+		}
+	}
+
 	if (!pipeline->layout)
 	{
 		VkPipelineLayoutCreateInfo pipeline_layout_info;
@@ -1046,8 +1075,8 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipeline_layout_info.pNext			= NULL;
 		pipeline_layout_info.flags			= 0;
-		pipeline_layout_info.setLayoutCount = pipeline->num_descriptor_set_layouts;
-		pipeline_layout_info.pSetLayouts		= pipeline->descriptor_set_layouts;
+		pipeline_layout_info.setLayoutCount		= pipeline->num_descriptor_sets;
+		pipeline_layout_info.pSetLayouts = pipeline->descriptor_layout_tracker;
 		pipeline_layout_info.pushConstantRangeCount	= 0;
 		pipeline_layout_info.pPushConstantRanges	= NULL;
 
@@ -1283,10 +1312,10 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	VkPipelineColorBlendAttachmentState blend_state;
 	memset(&blend_state, 0, sizeof(blend_state));
 	blend_state.blendEnable		= pipeline->blend_enable;
-	blend_state.srcColorBlendFactor	= VK_BLEND_FACTOR_ZERO;
-	blend_state.dstColorBlendFactor	= VK_BLEND_FACTOR_ZERO;
+	blend_state.srcColorBlendFactor	= VK_BLEND_FACTOR_SRC_ALPHA;
+	blend_state.dstColorBlendFactor	= VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 	blend_state.colorBlendOp	= pipeline->colour_blend_op;
-	blend_state.srcAlphaBlendFactor	= VK_BLEND_FACTOR_ZERO;
+	blend_state.srcAlphaBlendFactor	= VK_BLEND_FACTOR_ONE;
 	blend_state.dstAlphaBlendFactor	= VK_BLEND_FACTOR_ZERO;
 	blend_state.alphaBlendOp	= pipeline->alpha_blend_op;
 	blend_state.colorWriteMask	= pipeline->colour_write_mask;
@@ -1370,10 +1399,22 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 
 void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 {
-	if (pipeline->descriptor_set_layouts)
+	if (pipeline->descriptor_sets)
 	{
-		free(pipeline->descriptor_set_layouts);
-		pipeline->descriptor_set_layouts = NULL;
+		free(pipeline->descriptor_sets);
+		pipeline->descriptor_sets = NULL;
+	}
+
+	if (pipeline->descriptor_set_tracker)
+	{
+		free(pipeline->descriptor_set_tracker);
+		pipeline->descriptor_set_tracker = NULL;
+	}
+
+	if (pipeline->descriptor_layout_tracker)
+	{
+		free(pipeline->descriptor_layout_tracker);
+		pipeline->descriptor_layout_tracker = NULL;
 	}
 
 	for (int i = 0; i < 3; i++) { vka_destroy_shader(vulkan, &(pipeline->shaders[i])); }
@@ -1625,6 +1666,261 @@ int vka_wait_for_fence(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffe
 	return 0;
 }
 
+/***************
+ * Descriptors *
+ ***************/
+
+int vka_create_descriptor_pool(vka_vulkan_t *vulkan, vka_descriptor_pool_t *descriptor_pool)
+{
+	uint32_t counts[4] = { descriptor_pool->num_uniform_buffers,
+				descriptor_pool->num_storage_buffers,
+				descriptor_pool->num_storage_images,
+				descriptor_pool->num_image_samplers };
+	VkDescriptorType types[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+				VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER };
+
+	VkDescriptorPoolSize pool_sizes[4];
+	memset(pool_sizes, 0, 4 * sizeof(pool_sizes[0]));
+	uint32_t pool_size_count = 0;
+	for (int i = 0; i < 4; i++)
+	{
+		if (counts[i])
+		{
+			pool_sizes[pool_size_count].type = types[i];
+			pool_sizes[pool_size_count].descriptorCount = counts[i];
+			pool_size_count++;
+		}
+	}
+
+	if (!pool_size_count)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Descriptor pool \"%s\" has descriptor count of 0.", descriptor_pool->name);
+		return -1;
+	}
+
+	VkDescriptorPoolCreateInfo pool_info;
+	memset(&pool_info, 0, sizeof(pool_info));
+	pool_info.sType		= VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool_info.pNext		= NULL;
+	pool_info.flags		= 0;
+	pool_info.maxSets	= descriptor_pool->max_sets;
+	pool_info.poolSizeCount	= pool_size_count;
+	pool_info.pPoolSizes	= pool_sizes;
+
+	if (vkCreateDescriptorPool(vulkan->device, &pool_info, NULL,
+			&(descriptor_pool->pool)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Could not create descriptor pool \"%s\".", descriptor_pool->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+void vka_destroy_descriptor_pool(vka_vulkan_t *vulkan, vka_descriptor_pool_t *descriptor_pool)
+{
+	if (descriptor_pool->pool)
+	{
+		vkDestroyDescriptorPool(vulkan->device, descriptor_pool->pool, NULL);
+		descriptor_pool->pool = VK_NULL_HANDLE;
+	}
+}
+
+int vka_create_descriptor_set_layout(vka_vulkan_t *vulkan, vka_descriptor_set_t *descriptor_set)
+{
+	// Note - also updates descriptor and set count in associated pool (if there is one).
+	VkDescriptorType types[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+				VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER };
+	int suitable_type = 0;
+	for (int i = 0; i < 4; i++)
+	{
+		if (descriptor_set->type == types[i])
+		{
+			suitable_type = 1;
+			break;
+		}
+	}
+	if (!suitable_type)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Unsupported descriptor type for set \"%s\".", descriptor_set->name);
+		return -1;
+	}
+
+	VkDescriptorSetLayoutBinding layout_binding;
+	memset(&layout_binding, 0, sizeof(layout_binding));
+	layout_binding.binding			= descriptor_set->binding;
+	layout_binding.descriptorType		= descriptor_set->type;
+	layout_binding.descriptorCount		= descriptor_set->count;
+	layout_binding.stageFlags		= descriptor_set->stage_flags;
+	layout_binding.pImmutableSamplers	= NULL;
+
+	VkDescriptorSetLayoutCreateInfo layout_info;
+	memset(&layout_info, 0, sizeof(layout_info));
+	layout_info.sType		= VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layout_info.pNext		= NULL;
+	layout_info.flags		= 0;
+	layout_info.bindingCount	= 1;
+	layout_info.pBindings		= &layout_binding;
+
+	if (vkCreateDescriptorSetLayout(vulkan->device, &layout_info, NULL,
+				&(descriptor_set->layout)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Could not create descriptor set layout for \"%s\".", descriptor_set->name);
+		return -1;
+	}
+
+	if (!descriptor_set->pool) { return 0; }
+
+	// Update descriptor pool information:
+	descriptor_set->pool->max_sets++;
+	if (descriptor_set->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+	{
+		descriptor_set->pool->num_uniform_buffers += descriptor_set->count;
+	}
+	else if (descriptor_set->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+	{
+		descriptor_set->pool->num_storage_buffers += descriptor_set->count;
+	}
+	else if (descriptor_set->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+	{
+		descriptor_set->pool->num_storage_images += descriptor_set->count;
+	}
+	else { descriptor_set->pool->num_image_samplers += descriptor_set->count; }
+
+	return 0;
+}
+
+void vka_destroy_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descriptor_set)
+{
+	if (descriptor_set->layout)
+	{
+		vkDestroyDescriptorSetLayout(vulkan->device, descriptor_set->layout, NULL);
+		descriptor_set->layout = VK_NULL_HANDLE;
+	}
+
+	descriptor_set->set = VK_NULL_HANDLE;
+
+	if (descriptor_set->data)
+	{
+		free(descriptor_set->data);
+		descriptor_set->data = NULL;
+	}
+}
+
+int vka_allocate_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descriptor_set)
+{
+	VkDescriptorSetAllocateInfo allocate_info;
+	memset(&allocate_info, 0, sizeof(allocate_info));
+	allocate_info.sType			= VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocate_info.pNext			= NULL;
+	allocate_info.descriptorPool		= descriptor_set->pool->pool;
+	allocate_info.descriptorSetCount	= descriptor_set->count;
+	allocate_info.pSetLayouts		= &(descriptor_set->layout);
+
+	if (vkAllocateDescriptorSets(vulkan->device, &allocate_info,
+			&(descriptor_set->set)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Could not allocate descriptor set \"%s\".", descriptor_set->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+int vka_update_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descriptor_set)
+{
+	if (!descriptor_set->data)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"No data for descriptor set \"%s\".", descriptor_set->name);
+		return -1;
+	}
+
+	VkDescriptorBufferInfo *buffer_info = NULL;
+	VkDescriptorImageInfo *image_info = NULL;
+
+	if ((descriptor_set->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) ||
+		(descriptor_set->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER))
+	{
+		buffer_info = malloc(descriptor_set->count * sizeof(VkDescriptorBufferInfo));
+		if (!buffer_info)
+		{
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+				"Could not allocate memory for buffer info for set \"%s\".",
+				descriptor_set->name);
+			return -1;
+		}
+		memset(buffer_info, 0, descriptor_set->count * sizeof(VkDescriptorBufferInfo));
+		vka_buffer_t **buffers = (vka_buffer_t **)(descriptor_set->data);
+		for (uint32_t i = 0; i < descriptor_set->count; i++)
+		{
+			buffer_info[i].buffer	= buffers[i]->buffer;
+			buffer_info[i].offset	= 0;
+			buffer_info[i].range	= VK_WHOLE_SIZE;
+		}
+	}
+	else if ((descriptor_set->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) ||
+		(descriptor_set->type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER))
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Descriptor type (storage image or sampler) for set \"%s\" "
+			"not implemented yet.", descriptor_set->name);
+		return -1;
+
+		// TODO:
+		/*image_info = malloc(descriptor_set->count * sizeof(VkDescriptorImageInfo));
+		if (!image_info)
+		{
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+				"Could not allocate memory for image info for set \"%s\".",
+				descriptor_set->name);
+			return -1;
+		}
+		memset(image_info, 0, descriptor_set->count * sizeof(VkDescriptorImageInfo));
+		vka_image_t **images = (vka_image_t **)(descriptor_set->data);
+		for (uint32_t i = 0; i < descriptor_set->count; i++)
+		{
+			image_info[i].sampler		= images[i]->sampler->sampler;
+			image_info[i].imageView		= images[i]->image_view;
+			image_info[i].imageLayout	= VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		}*/
+	}
+	else
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Unsupported descriptor type for set \"%s\".", descriptor_set->name);
+		return -1;
+	}
+
+	VkWriteDescriptorSet write_info;
+	memset(&write_info, 0, sizeof(write_info));
+	write_info.sType		= VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write_info.pNext		= NULL;
+	write_info.dstSet		= descriptor_set->set;
+	write_info.dstBinding		= descriptor_set->binding;
+	write_info.dstArrayElement	= 0;
+	write_info.descriptorCount	= descriptor_set->count;
+	write_info.descriptorType	= descriptor_set->type;
+	write_info.pImageInfo		= image_info;
+	write_info.pBufferInfo		= buffer_info;
+	write_info.pTexelBufferView	= NULL;
+
+	vkUpdateDescriptorSets(vulkan->device, 1, &write_info, 0, NULL);
+
+	if (buffer_info) { free(buffer_info); }
+	if (image_info) { free(image_info); }
+	return 0;
+}
+
 /**************************
  * Images and image views *
  **************************/
@@ -1773,6 +2069,46 @@ void vka_copy_buffer(vka_command_buffer_t *command_buffer,
 	vkCmdCopyBuffer(command_buffer->buffer, source->buffer, destination->buffer, 1, &copy_info);
 }
 
+void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer)
+{
+	/* Note - this is intended for scene uniforms, with size <= 65536.
+	 * Buffer's void *data member is used for the update. */
+
+	VkBufferMemoryBarrier memory_barrier_1;
+	memset(&memory_barrier_1, 0, sizeof(memory_barrier_1));
+	memory_barrier_1.sType			= VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	memory_barrier_1.pNext			= NULL;
+	memory_barrier_1.srcAccessMask		= VK_ACCESS_UNIFORM_READ_BIT;
+	memory_barrier_1.dstAccessMask		= VK_ACCESS_TRANSFER_WRITE_BIT;
+	memory_barrier_1.srcQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
+	memory_barrier_1.dstQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
+	memory_barrier_1.buffer			= buffer->buffer;
+	memory_barrier_1.offset			= 0;
+	memory_barrier_1.size			= VK_WHOLE_SIZE;
+
+	vkCmdPipelineBarrier(command_buffer->buffer,
+		VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1, &memory_barrier_1, 0, NULL);
+
+	vkCmdUpdateBuffer(command_buffer->buffer, buffer->buffer, 0, buffer->size, buffer->data);
+
+	VkBufferMemoryBarrier memory_barrier_2;
+	memset(&memory_barrier_2, 0, sizeof(memory_barrier_2));
+	memory_barrier_2.sType			= VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	memory_barrier_2.pNext			= NULL;
+	memory_barrier_2.srcAccessMask		= VK_ACCESS_TRANSFER_WRITE_BIT;
+	memory_barrier_2.dstAccessMask		= VK_ACCESS_UNIFORM_READ_BIT;
+	memory_barrier_2.srcQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
+	memory_barrier_2.dstQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
+	memory_barrier_2.buffer			= buffer->buffer;
+	memory_barrier_2.offset			= 0;
+	memory_barrier_2.size			= VK_WHOLE_SIZE;
+
+	vkCmdPipelineBarrier(command_buffer->buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+		0, 0, NULL, 1, &memory_barrier_2, 0, NULL);
+}
+
 /*************
  * Rendering *
  *************/
@@ -1878,6 +2214,22 @@ void vka_bind_vertex_buffers(vka_command_buffer_t *command_buffer, vka_buffer_t 
 		vkCmdBindIndexBuffer(command_buffer->buffer, index_buffer->buffer, 0,
 							index_buffer->index_type);
 	}
+}
+
+void vka_bind_descriptor_sets(vka_command_buffer_t *command_buffer, vka_pipeline_t *pipeline)
+{
+	for (uint32_t i = 0; i < pipeline->num_descriptor_sets; i++)
+	{
+		pipeline->descriptor_layout_tracker[i] = pipeline->descriptor_sets[i]->layout;
+		pipeline->descriptor_set_tracker[i] = pipeline->descriptor_sets[i]->set;
+	}
+
+	VkPipelineBindPoint bind_point;
+	if (pipeline->is_compute_pipeline) { bind_point = VK_PIPELINE_BIND_POINT_COMPUTE; }
+	else { bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS; }
+
+	vkCmdBindDescriptorSets(command_buffer->buffer, bind_point, pipeline->layout, 0,
+		pipeline->num_descriptor_sets, pipeline->descriptor_set_tracker, 0, NULL);
 }
 
 void vka_draw_indexed(vka_command_buffer_t *command_buffer, uint32_t num_indices,
@@ -2501,6 +2853,20 @@ void vka_print_pipeline(FILE *file, vka_pipeline_t *pipeline)
 		}
 		else { fprintf(file, "%s= %p\n", shader_types[i], pipeline->shaders[i].shader); }
 	}
+}
+
+void vka_print_descriptor_pool(FILE *file, vka_descriptor_pool_t *descriptor_pool)
+{
+	fprintf(file, "*************************************\n");
+	fprintf(file, "* Vulkan descriptor pool debug info *\n");
+	fprintf(file, "*************************************\n");
+
+	fprintf(file, "Descriptor pool name: %s\n", descriptor_pool->name);
+
+	fprintf(file, "\n");
+
+	if (!descriptor_pool->pool) { fprintf(file, "Pool\t\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Pool\t\t\t\t\t= %p\n", descriptor_pool->pool); }
 }
 
 void vka_print_allocation(FILE *file, vka_allocation_t *allocation)
