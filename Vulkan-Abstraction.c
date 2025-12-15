@@ -1199,7 +1199,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	{
 		vertex_bindings[i].binding	= i;
 		vertex_bindings[i].stride	= pipeline->strides[i];
-		vertex_bindings[i].inputRate	= VK_VERTEX_INPUT_RATE_VERTEX;
+		vertex_bindings[i].inputRate	= pipeline->input_rates[i];
 	}
 
 	VkVertexInputAttributeDescription vertex_attributes[VKA_MAX_VERTEX_ATTRIBUTES];
@@ -2230,6 +2230,11 @@ void vka_bind_descriptor_sets(vka_command_buffer_t *command_buffer, vka_pipeline
 
 	vkCmdBindDescriptorSets(command_buffer->buffer, bind_point, pipeline->layout, 0,
 		pipeline->num_descriptor_sets, pipeline->descriptor_set_tracker, 0, NULL);
+}
+
+void vka_draw(vka_command_buffer_t *command_buffer, uint32_t num_vertices, int32_t vertex_offset)
+{
+	vkCmdDraw(command_buffer->buffer, num_vertices, 1, vertex_offset, 0);
 }
 
 void vka_draw_indexed(vka_command_buffer_t *command_buffer, uint32_t num_indices,

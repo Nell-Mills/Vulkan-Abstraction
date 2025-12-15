@@ -179,6 +179,7 @@ typedef struct
 	// Vertex input:
 	uint32_t num_vertex_bindings;
 	uint32_t strides[VKA_MAX_VERTEX_ATTRIBUTES];
+	VkVertexInputRate input_rates[VKA_MAX_VERTEX_ATTRIBUTES]; // Default ...INPUT_RATE_VERTEX.
 	uint32_t num_vertex_attributes;
 	uint32_t bindings[VKA_MAX_VERTEX_ATTRIBUTES];
 	VkFormat formats[VKA_MAX_VERTEX_ATTRIBUTES];
@@ -330,6 +331,7 @@ void vka_set_scissor(vka_command_buffer_t *command_buffer, vka_render_info_t *re
 void vka_bind_vertex_buffers(vka_command_buffer_t *command_buffer, vka_buffer_t *index_buffer,
 				uint32_t num_vertex_buffers, vka_buffer_t vertex_buffers[]);
 void vka_bind_descriptor_sets(vka_command_buffer_t *command_buffer, vka_pipeline_t *pipeline);
+void vka_draw(vka_command_buffer_t *command_buffer, uint32_t num_vertices, int32_t vertex_offset);
 void vka_draw_indexed(vka_command_buffer_t *command_buffer, uint32_t num_indices,
 				uint32_t index_offset, int32_t vertex_offset);
 int vka_present_image(vka_vulkan_t *vulkan);
