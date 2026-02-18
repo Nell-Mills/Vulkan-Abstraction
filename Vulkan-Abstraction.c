@@ -6,7 +6,6 @@
 
 int vka_setup_vulkan(vka_vulkan_t *vulkan)
 {
-	// Set up default values and enable default features:
 	if (!strcmp(vulkan->name, "")) { strcpy(vulkan->name, "Vulkan Application"); }
 	if (vulkan->minimum_window_width < 640) { vulkan->minimum_window_width = 640; }
 	if (vulkan->minimum_window_height < 480) { vulkan->minimum_window_height = 480; }
@@ -17,16 +16,11 @@ int vka_setup_vulkan(vka_vulkan_t *vulkan)
 
 	vulkan->enabled_features_12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 	vulkan->enabled_features_12.pNext = &(vulkan->enabled_features_11);
-	vulkan->enabled_features_12.descriptorIndexing = VK_TRUE;
-	vulkan->enabled_features_12.drawIndirectCount = VK_TRUE;
-	vulkan->enabled_features_12.runtimeDescriptorArray = VK_TRUE;
 
 	vulkan->enabled_features_13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
 	vulkan->enabled_features_13.pNext = &(vulkan->enabled_features_12);
 	vulkan->enabled_features_13.dynamicRendering = VK_TRUE;
 
-	vulkan->max_memory_allocation_size = 1073741824;
-	vulkan->max_sampler_descriptors = 1024;
 	vulkan->graphics_family_index = 100;
 	vulkan->present_family_index = 100;
 	vulkan->swapchain_format = VK_FORMAT_UNDEFINED;
@@ -305,21 +299,18 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	int best_score = -1;
 	uint32_t graphics_family_index;
 	uint32_t present_family_index;
-	VkDeviceSize max_memory_allocation_size;
 	VkBool32 sampler_anisotropy;
 
 	for (uint32_t i = 0; i < num_physical_devices; i++)
 	{
 		int score = vka_score_physical_device(vulkan, physical_devices[i],
-			&graphics_family_index, &present_family_index,
-			&max_memory_allocation_size, &sampler_anisotropy);
+			&graphics_family_index, &present_family_index, &sampler_anisotropy);
 		if (score > best_score)
 		{
 			best_score = score;
 			vulkan->physical_device = physical_devices[i];
 			vulkan->graphics_family_index = graphics_family_index;
 			vulkan->present_family_index = present_family_index;
-			vulkan->max_memory_allocation_size = max_memory_allocation_size;
 			vulkan->enabled_features.samplerAnisotropy = sampler_anisotropy;
 		}
 	}
@@ -786,8 +777,8 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 }
 
 int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_device,
-	uint32_t *graphics_family_index, uint32_t *present_family_index,
-	VkDeviceSize *max_memory_allocation_size, VkBool32 *sampler_anisotropy)
+		uint32_t *graphics_family_index, uint32_t *present_family_index,
+		VkBool32 *sampler_anisotropy)
 {
 	int score = 0;
 
@@ -802,9 +793,6 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 	get_properties.pNext = &maintenance_properties;
 
 	vkGetPhysicalDeviceProperties2(physical_device, &get_properties);
-
-	*max_memory_allocation_size = maintenance_properties.maxMemoryAllocationSize;
-	if (*max_memory_allocation_size >= 1073741824) { score += 5; }
 
 	uint32_t version_major = VK_API_VERSION_MAJOR(get_properties.properties.apiVersion);
 	uint32_t version_minor = VK_API_VERSION_MINOR(get_properties.properties.apiVersion);
@@ -965,8 +953,6 @@ int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_de
 
 	free(supported_features_array);
 	free(desired_features_array);
-
-	// TODO - check maxPerSetDescriptors and score if >= config. Outweigh anisotropy.
 
 	int graphics_queue_family_found = 0;
 	int present_queue_family_found = 0;
@@ -2587,9 +2573,6 @@ void vka_print_vulkan(FILE *file, vka_vulkan_t *vulkan)
 		fprintf(file, "Sampler anisotropy\t\t\tEnabled\n");
 	}
 	else { fprintf(file, "Sampler anisotropy\t\t\tNot enabled\n"); }
-
-	fprintf(file, "Max memory allocation size\t\t= %luMB\n",
-		(vulkan->max_memory_allocation_size / (1024 * 1024)));
 
 	fprintf(file, "\n");
 

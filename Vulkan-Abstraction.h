@@ -11,6 +11,17 @@
 #include <SDL3/SDL_vulkan.h>
 #include <Volk/volk.h>
 
+#ifdef VKA_NUKLEAR
+#define NK_ASSERT(expr)
+#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
+#define NK_INCLUDE_DEFAULT_ALLOCATOR
+#define NK_INCLUDE_FIXED_TYPES
+#define NK_INCLUDE_FONT_BAKING
+#define NK_INCLUDE_DEFAULT_FONT
+#define NK_INCLUDE_STANDARD_IO
+#include <Nuklear/nuklear.h>
+#endif
+
 #define VKA_API_VERSION_MAJOR 1
 #define VKA_API_VERSION_MINOR 3
 
@@ -113,10 +124,6 @@ typedef struct
 	VkPhysicalDeviceVulkan11Features enabled_features_11;
 	VkPhysicalDeviceVulkan12Features enabled_features_12;
 	VkPhysicalDeviceVulkan13Features enabled_features_13;
-
-	// Limits:
-	VkDeviceSize max_memory_allocation_size;
-	int max_sampler_descriptors;
 } vka_vulkan_t;
 
 typedef struct
@@ -285,8 +292,8 @@ int vka_create_command_pool(vka_vulkan_t *vulkan);
 int vka_create_command_buffers(vka_vulkan_t *vulkan);
 int vka_create_swapchain(vka_vulkan_t *vulkan);
 int vka_score_physical_device(vka_vulkan_t *vulkan, VkPhysicalDevice physical_device,
-	uint32_t *graphics_family_index, uint32_t *present_family_index,
-	VkDeviceSize *max_memory_allocation_size, VkBool32 *sampler_anisotropy);
+		uint32_t *graphics_family_index, uint32_t *present_family_index,
+		VkBool32 *sampler_anisotropy);
 
 // Pipelines and shaders:
 int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
