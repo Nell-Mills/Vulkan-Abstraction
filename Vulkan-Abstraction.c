@@ -53,23 +53,12 @@ void vka_shutdown_vulkan(vka_vulkan_t *vulkan)
 {
 	vka_device_wait_idle(vulkan);
 
-	if (vulkan->swapchain_image_views)
+	if (vulkan->swapchain_images)
 	{
 		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 		{
-			if (vulkan->swapchain_image_views[i])
-			{
-				vkDestroyImageView(vulkan->device,
-					vulkan->swapchain_image_views[i], NULL);
-				vulkan->swapchain_image_views[i] = VK_NULL_HANDLE;
-			}
+			vka_destroy_image(vulkan, &(vulkan->swapchain_images[i]));
 		}
-		free(vulkan->swapchain_image_views);
-		vulkan->swapchain_image_views = NULL;
-	}
-
-	if (vulkan->swapchain_images)
-	{
 		free(vulkan->swapchain_images);
 		vulkan->swapchain_images = NULL;
 	}
@@ -488,23 +477,12 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	// Used for initial creation AND recreation of swapchain.
 	vka_device_wait_idle(vulkan);
 
-	if (vulkan->swapchain_image_views)
+	if (vulkan->swapchain_images)
 	{
 		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 		{
-			if (vulkan->swapchain_image_views[i])
-			{
-				vkDestroyImageView(vulkan->device,
-					vulkan->swapchain_image_views[i], NULL);
-				vulkan->swapchain_image_views[i] = VK_NULL_HANDLE;
-			}
+			vka_destroy_image(vulkan, &(vulkan->swapchain_images[i]));
 		}
-		free(vulkan->swapchain_image_views);
-		vulkan->swapchain_image_views = NULL;
-	}
-
-	if (vulkan->swapchain_images)
-	{
 		free(vulkan->swapchain_images);
 		vulkan->swapchain_images = NULL;
 	}
@@ -700,9 +678,6 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 
 	if (old_swapchain) { vkDestroySwapchainKHR(vulkan->device, old_swapchain, NULL); }
 
-	/* Calls to free() for swapchain images and image views are
-	 * in vka_vulkan_shutdown() and the start of this function. */
-
 	if (vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain,
 		&(vulkan->num_swapchain_images), NULL) != VK_SUCCESS)
 	{
@@ -711,7 +686,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 		return -1;
 	}
 
-	vulkan->swapchain_images = malloc(vulkan->num_swapchain_images * sizeof(VkImage));
+	vulkan->swapchain_images = calloc(vulkan->num_swapchain_images, sizeof(vka_image_t));
 	if (!vulkan->swapchain_images)
 	{
 		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
@@ -720,55 +695,40 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 	}
 	for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 	{
-		vulkan->swapchain_images[i] = VK_NULL_HANDLE;
+		snprintf(vulkan->swapchain_images[i].name, NM_MAX_NAME_LENGTH,
+						"Swapchain image %u", i);
+		vulkan->swapchain_images[i].image = VK_NULL_HANDLE;
+		vulkan->swapchain_images[i].image_view = VK_NULL_HANDLE;
+		vulkan->swapchain_images[i].is_swapchain_image = 1;
+		vulkan->swapchain_images[i].format = vulkan->swapchain_format;
+		vulkan->swapchain_images[i].aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
+		vulkan->swapchain_images[i].mip_levels = 1;
 	}
 
-	if (vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain,
-		&(vulkan->num_swapchain_images), vulkan->swapchain_images) != VK_SUCCESS)
-	{
-		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not get swapchain images.");
-		return -1;
-	}
-
-	vulkan->swapchain_image_views = malloc(vulkan->num_swapchain_images * sizeof(VkImageView));
-	if (!vulkan->swapchain_image_views)
+	VkImage *images = malloc(vulkan->num_swapchain_images * sizeof(VkImage));
+	if (!images)
 	{
 		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
-			"Could not allocate memory for swapchain image views.");
+			"Could not allocate memory for getting swapchain images.");
+		return -1;
+	}
+	if (vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain,
+		&(vulkan->num_swapchain_images), images) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Could not get swapchain images.");
+		free(images);
 		return -1;
 	}
 	for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 	{
-		vulkan->swapchain_image_views[i] = VK_NULL_HANDLE;
+		vulkan->swapchain_images[i].image = images[i];
 	}
+	free(images);
 
 	for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 	{
-		VkImageViewCreateInfo view_info;
-		memset(&view_info, 0, sizeof(view_info));
-		view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		view_info.pNext					= NULL;
-		view_info.flags					= 0;
-		view_info.image					= vulkan->swapchain_images[i];
-		view_info.viewType				= VK_IMAGE_VIEW_TYPE_2D;
-		view_info.format				= vulkan->swapchain_format;
-		view_info.components.r				= VK_COMPONENT_SWIZZLE_IDENTITY;
-		view_info.components.g				= VK_COMPONENT_SWIZZLE_IDENTITY;
-		view_info.components.b				= VK_COMPONENT_SWIZZLE_IDENTITY;
-		view_info.components.a				= VK_COMPONENT_SWIZZLE_IDENTITY;
-		view_info.subresourceRange.aspectMask		= VK_IMAGE_ASPECT_COLOR_BIT;
-		view_info.subresourceRange.baseMipLevel		= 0;
-		view_info.subresourceRange.levelCount		= 1;
-		view_info.subresourceRange.baseArrayLayer	= 0;
-		view_info.subresourceRange.layerCount		= 1;
-
-		if (vkCreateImageView(vulkan->device, &view_info, NULL,
-			&(vulkan->swapchain_image_views[i])) != VK_SUCCESS)
-		{
-			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
-				"Could not create swapchain image view.");
-			return -1;
-		}
+		// Create image views:
+		if (vka_create_image(vulkan, &(vulkan->swapchain_images[i]))) { return -1; }
 	}
 
 	if (old_format != vulkan->swapchain_format) { vulkan->recreate_pipelines = 1; }
@@ -1907,11 +1867,115 @@ int vka_update_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descri
 	return 0;
 }
 
-/**************************
- * Images and image views *
- **************************/
+/************************************
+ * Samplers, images and image views *
+ ************************************/
 
-void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_info_t *image_info)
+int vka_create_sampler(vka_vulkan_t *vulkan, vka_sampler_t *sampler)
+{
+	if (vulkan->enabled_features.samplerAnisotropy == VK_FALSE)
+	{
+		sampler->anisotropy_enable = VK_FALSE;
+	}
+	if (sampler->max_anisotropy < 1.f) { sampler->max_anisotropy = 1.f; }
+
+	VkSamplerCreateInfo sampler_info;
+	memset(&sampler_info, 0, sizeof(sampler_info));
+	sampler_info.sType			= VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler_info.pNext			= NULL;
+	sampler_info.flags			= 0;
+	sampler_info.magFilter			= VK_FILTER_LINEAR;
+	sampler_info.minFilter			= VK_FILTER_LINEAR;
+	sampler_info.mipmapMode			= VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	sampler_info.addressModeU		= VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler_info.addressModeV		= VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler_info.addressModeW		= VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler_info.mipLodBias			= 0.f;
+	sampler_info.anisotropyEnable		= sampler->anisotropy_enable;
+	sampler_info.maxAnisotropy		= sampler->max_anisotropy;
+	sampler_info.compareEnable		= VK_FALSE;
+	sampler_info.compareOp			= VK_COMPARE_OP_NEVER;
+	sampler_info.minLod			= 0.f;
+	sampler_info.maxLod			= VK_LOD_CLAMP_NONE;
+	sampler_info.borderColor		= sampler->border_colour;
+	sampler_info.unnormalizedCoordinates	= VK_FALSE;
+
+	if (vkCreateSampler(vulkan->device, &sampler_info, NULL, &(sampler->sampler)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Could not create sampler \"%s\".", sampler->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+void vka_destroy_sampler(vka_vulkan_t *vulkan, vka_sampler_t *sampler)
+{
+	if (sampler->sampler)
+	{
+		vkDestroySampler(vulkan->device, sampler->sampler, NULL);
+		sampler->sampler = VK_NULL_HANDLE;
+	}
+}
+
+int vka_create_image(vka_vulkan_t *vulkan, vka_image_t *image)
+{
+	if (!image->is_swapchain_image)
+	{
+
+	}
+
+	if (image->mip_levels < 1) { image->mip_levels = 1; }
+
+	VkImageViewCreateInfo view_info;
+	memset(&view_info, 0, sizeof(view_info));
+	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view_info.pNext					= NULL;
+	view_info.flags					= 0;
+	view_info.image					= image->image;
+	view_info.viewType				= VK_IMAGE_VIEW_TYPE_2D;
+	view_info.format				= image->format;
+	view_info.components.r				= VK_COMPONENT_SWIZZLE_IDENTITY;
+	view_info.components.g				= VK_COMPONENT_SWIZZLE_IDENTITY;
+	view_info.components.b				= VK_COMPONENT_SWIZZLE_IDENTITY;
+	view_info.components.a				= VK_COMPONENT_SWIZZLE_IDENTITY;
+	view_info.subresourceRange.aspectMask		= image->aspect_mask;
+	view_info.subresourceRange.baseMipLevel		= 0;
+	view_info.subresourceRange.levelCount		= image->mip_levels;
+	view_info.subresourceRange.baseArrayLayer	= 0;
+	view_info.subresourceRange.layerCount		= 1;
+
+	if (vkCreateImageView(vulkan->device, &view_info, NULL, &(image->image_view)) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Could not create image view \"%s\".", image->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+void vka_destroy_image(vka_vulkan_t *vulkan, vka_image_t *image)
+{
+	if (image->image_view)
+	{
+		vkDestroyImageView(vulkan->device, image->image_view, NULL);
+		image->image_view = VK_NULL_HANDLE;
+	}
+
+	if (image->image)
+	{
+		if (!image->is_swapchain_image)
+		{
+			vkDestroyImage(vulkan->device, image->image, NULL);
+		}
+		image->image = VK_NULL_HANDLE;
+	}
+}
+
+void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_t *image,
+						vka_image_info_t *image_info)
 {
 	VkImageMemoryBarrier image_barrier;
 	memset(&image_barrier, 0, sizeof(image_barrier));
@@ -1923,10 +1987,10 @@ void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_info_t
 	image_barrier.newLayout				= image_info->new_layout;
 	image_barrier.srcQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
 	image_barrier.dstQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
-	image_barrier.image				= *(image_info->image);
+	image_barrier.image				= image->image;
 	image_barrier.subresourceRange.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT;
 	image_barrier.subresourceRange.baseMipLevel	= 0;
-	image_barrier.subresourceRange.levelCount	= image_info->mip_levels;
+	image_barrier.subresourceRange.levelCount	= image->mip_levels;
 	image_barrier.subresourceRange.baseArrayLayer	= 0;
 	image_barrier.subresourceRange.layerCount	= 1;
 
@@ -2102,8 +2166,6 @@ void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffe
 void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
 {
 	vka_image_info_t image_info = {0};
-	image_info.image		= render_info->colour_image;
-	image_info.mip_levels		= 1;
 	image_info.src_access_mask	= VK_ACCESS_NONE;
 	image_info.dst_access_mask	= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	image_info.old_layout		= VK_IMAGE_LAYOUT_UNDEFINED;
@@ -2111,13 +2173,13 @@ void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t
 	image_info.src_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	image_info.dst_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
-	vka_transition_image(command_buffer, &image_info);
+	vka_transition_image(command_buffer, render_info->colour_image, &image_info);
 
 	VkRenderingAttachmentInfo colour_attachment_info;
 	memset(&colour_attachment_info, 0, sizeof(colour_attachment_info));
 	colour_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 	colour_attachment_info.pNext			= NULL;
-	colour_attachment_info.imageView		= *(render_info->colour_image_view);
+	colour_attachment_info.imageView		= render_info->colour_image->image_view;
 	colour_attachment_info.imageLayout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	colour_attachment_info.resolveMode		= VK_RESOLVE_MODE_NONE;
 	colour_attachment_info.resolveImageView		= VK_NULL_HANDLE;
@@ -2149,8 +2211,6 @@ void vka_end_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *
 	vkCmdEndRendering(command_buffer->buffer);
 
 	vka_image_info_t image_info = {0};
-	image_info.image		= render_info->colour_image;
-	image_info.mip_levels		= 1;
 	image_info.src_access_mask	= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	image_info.dst_access_mask	= VK_ACCESS_NONE;
 	image_info.old_layout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -2158,7 +2218,7 @@ void vka_end_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *
 	image_info.src_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	image_info.dst_stage_mask	= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
 
-	vka_transition_image(command_buffer, &image_info);
+	vka_transition_image(command_buffer, render_info->colour_image, &image_info);
 }
 
 void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
@@ -2404,6 +2464,10 @@ int vka_get_next_swapchain_image(vka_vulkan_t *vulkan)
 
 	return 0;
 }
+
+#ifdef VKA_NUKLEAR
+
+#endif
 
 #ifdef VKA_DEBUG
 int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
@@ -2696,34 +2760,22 @@ void vka_print_vulkan(FILE *file, vka_vulkan_t *vulkan)
 		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 		{
 			fprintf(file, " ---> Swapchain image %d\t\t\t= ", i);
-			if (!vulkan->swapchain_images[i])
+			if (!vulkan->swapchain_images[i].image)
 			{
 				fprintf(file, "VK_NULL_HANDLE\n");
 			}
 			else
 			{
-				fprintf(file, "%p\n", vulkan->swapchain_images[i]);
+				fprintf(file, "%p\n", vulkan->swapchain_images[i].image);
 			}
-		}
-	}
-
-	if (!vulkan->swapchain_image_views)
-	{
-		fprintf(file, "Swapchain image views\t\t\t= NULL\n");
-	}
-	else
-	{
-		fprintf(file, "Swapchain image views\t\t\t= %p\n", vulkan->swapchain_image_views);
-		for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
-		{
 			fprintf(file, " ---> Swapchain image view %d\t\t= ", i);
-			if (!vulkan->swapchain_image_views[i])
+			if (!vulkan->swapchain_images[i].image_view)
 			{
 				fprintf(file, "VK_NULL_HANDLE\n");
 			}
 			else
 			{
-				fprintf(file, "%p\n", vulkan->swapchain_image_views[i]);
+				fprintf(file, "%p\n", vulkan->swapchain_images[i].image_view);
 			}
 		}
 	}

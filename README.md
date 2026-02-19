@@ -47,6 +47,8 @@ For Nuklear GUI functionality, define VKA_NUKLEAR when compiling.
     - Update descriptor sets
 
 - Images:
+    - Create sampler
+    - Create and destroy images and image views
     - Transition image layout
 
 ## Compilation:
@@ -79,6 +81,8 @@ Functional containers:
 
 - vka\_command\_buffer\_t: Command buffer and fence pair
 
+- vka\_image\_t: Container for an image, an image view and some configuration
+
 - vka\_pipeline\_t: Pipeline layout, pipeline, shaders
 
 - vka\_shader\_t: Mostly a wrapper for a path and a shader module - managed by pipelines but can be standalone, too
@@ -86,6 +90,8 @@ Functional containers:
 - vka\_allocation\_t: Container for memory allocation, as well as mapped memory
 
 - vka\_buffer\_t: Contains a VkBuffer, and a pointer to the relevant memory allocation
+
+- vka\_sampler\_t: Container for a VkSampler and some configuration
 
 - vka\_descriptor\_pool\_t
 

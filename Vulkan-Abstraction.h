@@ -12,6 +12,8 @@
 #include <Volk/volk.h>
 
 #ifdef VKA_NUKLEAR
+#define VKA_NUKLEAR_MAX_VERTEX_BUFFER 512 * 1024
+#define VKA_NUKLEAR_MAX_INDEX_BUFFER 128 * 1024
 #define NK_ASSERT(expr)
 #define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
 #define NK_INCLUDE_DEFAULT_ALLOCATOR
@@ -78,6 +80,21 @@ typedef struct
 typedef struct
 {
 	char name[NM_MAX_NAME_LENGTH];
+	VkImage image;
+	VkImageView image_view;
+
+	/*---------------*
+	 * Configuration *
+	 *---------------*/
+	uint8_t is_swapchain_image;	// Prevents invalid creation/destruction of VkImage.
+	VkFormat format;
+	VkImageAspectFlags aspect_mask;
+	uint32_t mip_levels;
+} vka_image_t;
+
+typedef struct
+{
+	char name[NM_MAX_NAME_LENGTH];
 	SDL_Window *window;
 	VkInstance instance;
 	VkSurfaceKHR surface;
@@ -99,8 +116,7 @@ typedef struct
 	VkFormat swapchain_format;
 	VkExtent2D swapchain_extent;
 	VkSwapchainKHR swapchain;
-	VkImage *swapchain_images;
-	VkImageView *swapchain_image_views;
+	vka_image_t *swapchain_images;
 
 	uint8_t recreate_swapchain;
 	uint8_t recreate_pipelines;
@@ -245,19 +261,31 @@ typedef struct
 	VkIndexType index_type;		// For index buffer.
 } vka_buffer_t;
 
+typedef struct
+{
+	char name[NM_MAX_NAME_LENGTH];
+	VkSampler sampler;
+
+	/*---------------*
+	 * Configuration *
+	 *---------------*/
+	VkBool32 anisotropy_enable;
+	float max_anisotropy;
+	VkBorderColor border_colour;
+} vka_sampler_t;
+
 /**************************
  * Information containers *
  **************************/
 
 typedef struct
 {
-	VkImage *colour_image;
-	VkImageView *colour_image_view;
+	vka_image_t *colour_image;
 	VkClearValue colour_clear_value;
 	VkAttachmentLoadOp colour_load_op;
 	VkAttachmentStoreOp colour_store_op;
 
-	VkImageView *depth_image_view;
+	vka_image_t *depth_image;
 	VkClearValue depth_clear_value;
 	VkAttachmentLoadOp depth_load_op;
 	VkAttachmentStoreOp depth_store_op;
@@ -269,9 +297,6 @@ typedef struct
 
 typedef struct
 {
-	VkImage *image;
-	uint32_t mip_levels;
-
 	VkAccessFlags src_access_mask;
 	VkAccessFlags dst_access_mask;
 	VkImageLayout old_layout;
@@ -318,8 +343,13 @@ void vka_destroy_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *desc
 int vka_allocate_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descriptor_set);
 int vka_update_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descriptor_set);
 
-// Images and image views:
-void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_info_t *image_info);
+// Samplers, images and image views:
+int vka_create_sampler(vka_vulkan_t *vulkan, vka_sampler_t *sampler);
+void vka_destroy_sampler(vka_vulkan_t *vulkan, vka_sampler_t *sampler);
+int vka_create_image(vka_vulkan_t *vulkan, vka_image_t *image);
+void vka_destroy_image(vka_vulkan_t *vulkan, vka_image_t *image);
+void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_t *image,
+						vka_image_info_t *image_info);
 
 // Buffers:
 int vka_create_buffer(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
@@ -353,6 +383,35 @@ void vka_unmap_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation);
 void vka_device_wait_idle(vka_vulkan_t *vulkan);
 void vka_next_frame(vka_vulkan_t *vulkan);
 int vka_get_next_swapchain_image(vka_vulkan_t *vulkan);
+
+#ifdef VKA_NUKLEAR
+typedef struct
+{
+	float position[3];
+	uint8_t colour[4];
+	float uv[2];
+} vka_nk_vertex_t;
+
+typedef struct
+{
+	struct nk_context context;
+	struct nk_buffer commands;
+
+	vka_allocation_t allocation;
+
+	vka_buffer_t vertex_buffer;
+	vka_buffer_t index_buffer;
+	vka_buffer_t draw_buffer;
+
+	struct nk_font_atlas font_atlas;
+	vka_image_t font_image;
+
+	vka_sampler_t sampler;
+	struct nk_draw_null_texture null_texture;
+
+	vka_pipeline_t pipeline;
+} vka_nk_t;
+#endif
 
 #ifdef VKA_DEBUG
 int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan);
