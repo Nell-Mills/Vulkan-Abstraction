@@ -10,8 +10,6 @@ int vka_setup_vulkan(vka_vulkan_t *vulkan)
 	if (vulkan->minimum_window_width < 640) { vulkan->minimum_window_width = 640; }
 	if (vulkan->minimum_window_height < 480) { vulkan->minimum_window_height = 480; }
 
-	vulkan->enabled_features.multiDrawIndirect = VK_TRUE;
-
 	vulkan->enabled_features_11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
 
 	vulkan->enabled_features_12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
@@ -727,7 +725,6 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 
 	for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 	{
-		// Create image views:
 		if (vka_create_image(vulkan, &(vulkan->swapchain_images[i]))) { return -1; }
 	}
 
@@ -2466,7 +2463,141 @@ int vka_get_next_swapchain_image(vka_vulkan_t *vulkan)
 }
 
 #ifdef VKA_NUKLEAR
+int vka_setup_nuklear(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear)
+{
+	/* Things to do before running this function:
+	 * - Set shader paths in pipeline. */
+	if (!nk_init_default(&(nuklear->context), 0))
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Could not initialise Nuklear context.");
+		return -1;
+	}
 
+	nuklear->context.clip.copy = vka_nuklear_clipboard_copy;
+	nuklear->context.clip.paste = vka_nuklear_clipboard_paste;
+	nuklear->context.clip.userdata = nk_handle_ptr(0);
+
+	nk_buffer_init_default(&(nuklear->commands));
+
+	// TODO - create vertex memory buffers and allocation
+
+	if (vka_create_sampler(vulkan, &(nuklear->sampler))) { return -1; }
+
+	// TODO - create font
+	nuklear->default_font.config = nk_font_config(17.f);
+	nuklear->default_font.config.oversample_h = 1;
+	nuklear->default_font.config.pixel_snap = 1;
+	if (vka_nuklear_create_font(vulkan, nuklear, &(nuklear->default_font))) { return -1; }
+	nk_style_set_font(&(nuklear->context), &(nuklear->font_atlas.default_font->handle));
+
+	// TODO - initialise null texture
+
+	// TODO - set up pipeline config
+
+	return 0;
+}
+
+void vka_shutdown_nuklear(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear)
+{
+	vka_device_wait_idle(vulkan);
+
+	nk_font_atlas_clear(&(nuklear->font_atlas));
+	nk_free(&(nuklear->context));
+
+	vka_destroy_pipeline(vulkan, &(nuklear->pipeline));
+	vka_nuklear_destroy_font(vulkan, &(nuklear->default_font));
+	vka_destroy_sampler(vulkan, &(nuklear->sampler));
+	vka_destroy_allocation(vulkan, &(nuklear->allocation));
+
+	nk_buffer_free(&(nuklear->commands));
+}
+
+int vka_nuklear_create_font(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear, vka_nuklear_font_t *font)
+{
+	// TODO - decide how to fill font atlas if non-default fonts are desired.
+	nk_font_atlas_init_default(&(nuklear->font_atlas));
+	nk_font_atlas_begin(&(nuklear->font_atlas));
+
+	if (font->is_default)
+	{
+		nuklear->font_atlas.default_font = nk_font_atlas_add_default(&(nuklear->font_atlas),
+								font->config.size, &(font->config));
+	}
+	else
+	{
+		// TODO
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Non-default font not implemented.");
+		return -1;
+	}
+
+	if (!nuklear->font_atlas.default_font)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Could not create font \"%s\".", font->name);
+		return -1;
+	}
+
+	int width;
+	int height;
+	const void *texture = nk_font_atlas_bake(&(nuklear->font_atlas), &width,
+						&height, NK_FONT_ATLAS_RGBA32);
+	if (!texture)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Could not bake font \"%s\".", font->name);
+		return -1;
+	}
+
+	// TODO - set up vka_image_t.
+
+	nk_font_atlas_end(&(nuklear->font_atlas), nk_handle_id(0), 0);
+	nk_font_atlas_cleanup(&(nuklear->font_atlas));
+
+	return 0;
+}
+
+void vka_nuklear_destroy_font(vka_vulkan_t *vulkan, vka_nuklear_font_t *font)
+{
+	vka_destroy_image(vulkan, &(font->image));
+}
+
+void vka_nuklear_process_event(vka_nuklear_t *nuklear, SDL_Event *event)
+{
+	// TODO
+	(void)nuklear;
+	(void)event;
+}
+
+void vka_nuklear_process_grab(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear)
+{
+	// TODO
+	(void)vulkan;
+	(void)nuklear;
+}
+
+void vka_nuklear_clipboard_copy(nk_handle usr, const char *text, int len)
+{
+	// User data handle not needed:
+	(void)usr;
+
+	if (len < 1) { return; }
+	char *str = malloc((len + 1) * sizeof(char));
+	if (!str) { return; }
+	memcpy(str, text, len * sizeof(char));
+	str[len] = '\0';
+	SDL_SetClipboardText(str);
+	free(str);
+}
+
+void vka_nuklear_clipboard_paste(nk_handle usr, struct nk_text_edit *edit)
+{
+	// User data handle not needed:
+	(void)usr;
+
+	const char *text = SDL_GetClipboardText();
+	if (text) { nk_textedit_paste(edit, text, nk_strlen(text)); }
+}
 #endif
 
 #ifdef VKA_DEBUG
@@ -2588,6 +2719,9 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_util_callback(
 	VkDebugUtilsMessengerCallbackDataEXT const *data,
 	void *user_pointer)
 {
+	// User pointer not needed:
+	(void)user_pointer;
+
 	char *severity_string = vka_debug_get_severity(severity);
 	char *type_string = vka_debug_get_type(type);
 
@@ -2827,6 +2961,26 @@ void vka_print_command_buffer(FILE *file, vka_command_buffer_t *command_buffer)
 	else { fprintf(file, "Queue\t\t\t\t\t= %p\n", *(command_buffer->queue)); }
 }
 
+void vka_print_image(FILE *file, vka_image_t *image)
+{
+	fprintf(file, "***************************\n");
+	fprintf(file, "* Vulkan image debug info *\n");
+	fprintf(file, "***************************\n");
+
+	fprintf(file, "Image name: %s\n", image->name);
+	fprintf(file, "Swapchain image: ");
+	if (image->is_swapchain_image) { fprintf(file, "Yes\n"); }
+	else { fprintf(file, "No\n"); }
+
+	fprintf(file, "\n");
+
+	if (!image->image) { fprintf(file, "Image\t\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Image\t\t\t\t\t= %p\n", image->image); }
+
+	if (!image->image_view) { fprintf(file, "Image view\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Image view\t\t\t\t= %p\n", image->image_view); }
+}
+
 void vka_print_shader(FILE *file, vka_shader_t *shader)
 {
 	fprintf(file, "****************************\n");
@@ -2939,5 +3093,19 @@ void vka_print_buffer(FILE *file, vka_buffer_t *buffer)
 	else { fprintf(file, "Buffer\t\t\t\t\t= %p\n", buffer->buffer); }
 	if (!buffer->allocation) { fprintf(file, "Allocation\t\t\t\t= NULL\n"); }
 	else { fprintf(file, "Allocation\t\t\t\t= %p\n", buffer->allocation); }
+}
+
+void vka_print_sampler(FILE *file, vka_sampler_t *sampler)
+{
+	fprintf(file, "*****************************\n");
+	fprintf(file, "* Vulkan sampler debug info *\n");
+	fprintf(file, "*****************************\n");
+
+	fprintf(file, "Sampler name: %s\n", sampler->name);
+
+	fprintf(file, "\n");
+
+	if (!sampler->sampler) { fprintf(file, "Sampler\t\t\t\t\t= VK_NULL_HANDLE\n"); }
+	else { fprintf(file, "Sampler\t\t\t\t\t= %p\n", sampler->sampler); }
 }
 #endif

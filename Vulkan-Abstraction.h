@@ -390,7 +390,19 @@ typedef struct
 	float position[3];
 	uint8_t colour[4];
 	float uv[2];
-} vka_nk_vertex_t;
+} vka_nuklear_vertex_t;
+
+typedef struct
+{
+	char name[NM_MAX_NAME_LENGTH];
+	vka_image_t image;
+
+	/*---------------*
+	 * Configuration *
+	 *---------------*/
+	uint8_t is_default;
+	struct nk_font_config config;
+} vka_nuklear_font_t;
 
 typedef struct
 {
@@ -401,16 +413,24 @@ typedef struct
 
 	vka_buffer_t vertex_buffer;
 	vka_buffer_t index_buffer;
-	vka_buffer_t draw_buffer;
 
 	struct nk_font_atlas font_atlas;
-	vka_image_t font_image;
+	vka_nuklear_font_t default_font;
 
 	vka_sampler_t sampler;
 	struct nk_draw_null_texture null_texture;
 
 	vka_pipeline_t pipeline;
-} vka_nk_t;
+} vka_nuklear_t;
+
+int vka_setup_nuklear(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear);
+void vka_shutdown_nuklear(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear);
+int vka_nuklear_create_font(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear, vka_nuklear_font_t *font);
+void vka_nuklear_destroy_font(vka_vulkan_t *vulkan, vka_nuklear_font_t *font);
+void vka_nuklear_process_event(vka_nuklear_t *nuklear, SDL_Event *event);
+void vka_nuklear_process_grab(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear);
+void vka_nuklear_clipboard_copy(nk_handle usr, const char *text, int len);
+void vka_nuklear_clipboard_paste(nk_handle usr, struct nk_text_edit *edit);
 #endif
 
 #ifdef VKA_DEBUG
@@ -425,11 +445,13 @@ char *vka_debug_get_severity(VkDebugUtilsMessageSeverityFlagBitsEXT severity);
 char *vka_debug_get_type(VkDebugUtilsMessageTypeFlagsEXT type);
 void vka_print_vulkan(FILE *file, vka_vulkan_t *vulkan);
 void vka_print_command_buffer(FILE *file, vka_command_buffer_t *command_buffer);
+void vka_print_image(FILE *file, vka_image_t *image);
 void vka_print_shader(FILE *file, vka_shader_t *shader);
 void vka_print_pipeline(FILE *file, vka_pipeline_t *pipeline);
 void vka_print_descriptor_pool(FILE *file, vka_descriptor_pool_t *descriptor_pool);
 void vka_print_allocation(FILE *file, vka_allocation_t *allocation);
 void vka_print_buffer(FILE *file, vka_buffer_t *buffer);
+void vka_print_sampler(FILE *file, vka_sampler_t *sampler);
 #endif
 
 #endif
