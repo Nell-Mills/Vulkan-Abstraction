@@ -50,9 +50,6 @@
 #define VKA_MEMORY_HOST VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 #define VKA_MEMORY_DEVICE VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 
-/* Note - pointers to Vk structs are managed outside their containers.
- * Exception: swapchain images and image views in vka_vulkan_t. */
-
 /*************************
  * Functional containers *
  *************************/
@@ -390,7 +387,7 @@ void vka_destroy_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation);
 int vka_map_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation);
 void vka_unmap_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation);
 
-// Utility:
+// Misc:
 void vka_device_wait_idle(vka_vulkan_t *vulkan);
 void vka_next_frame(vka_vulkan_t *vulkan);
 int vka_get_next_swapchain_image(vka_vulkan_t *vulkan);
@@ -410,7 +407,6 @@ void vka_nuklear_process_event(vka_vulkan_t *vulkan, SDL_Event *event);
 void vka_nuklear_process_grab(vka_vulkan_t *vulkan);
 void vka_nuklear_clipboard_copy(nk_handle usr, const char *text, int len);
 void vka_nuklear_clipboard_paste(nk_handle usr, struct nk_text_edit *edit);
-int vka_nuklear_create_default_shaders(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
 #endif
 
 #ifdef VKA_DEBUG
