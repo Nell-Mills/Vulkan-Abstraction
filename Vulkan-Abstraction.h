@@ -80,71 +80,6 @@ typedef struct
 typedef struct
 {
 	char name[NM_MAX_NAME_LENGTH];
-	VkImage image;
-	VkImageView image_view;
-
-	/*---------------*
-	 * Configuration *
-	 *---------------*/
-	uint8_t is_swapchain_image;	// Prevents invalid creation/destruction of VkImage.
-	VkFormat format;
-	VkImageAspectFlags aspect_mask;
-	uint32_t mip_levels;
-} vka_image_t;
-
-typedef struct
-{
-	char name[NM_MAX_NAME_LENGTH];
-	SDL_Window *window;
-	VkInstance instance;
-	VkSurfaceKHR surface;
-
-	VkPhysicalDevice physical_device;
-	VkDevice device;
-	uint32_t graphics_family_index;
-	VkQueue graphics_queue;
-	uint32_t present_family_index;
-	VkQueue present_queue;
-
-	VkCommandPool command_pool;
-	vka_command_buffer_t command_buffers[VKA_MAX_FRAMES_IN_FLIGHT];
-
-	VkSemaphore image_available[VKA_MAX_FRAMES_IN_FLIGHT];
-	VkSemaphore render_complete[VKA_MAX_FRAMES_IN_FLIGHT];
-
-	uint32_t num_swapchain_images;
-	VkFormat swapchain_format;
-	VkExtent2D swapchain_extent;
-	VkSwapchainKHR swapchain;
-	vka_image_t *swapchain_images;
-
-	uint8_t recreate_swapchain;
-	uint8_t recreate_pipelines;
-	uint8_t current_frame;
-	uint32_t current_swapchain_index;
-
-	char error[NM_MAX_ERROR_LENGTH];
-	#ifdef VKA_DEBUG
-	VkDebugUtilsMessengerEXT debug_messenger;
-	#endif
-
-	/*---------------*
-	 * Configuration *
-	 *---------------*/
-	uint8_t window_resizable;
-	int minimum_window_width;
-	int minimum_window_height;
-
-	// Feature requirements (after device creation, these represent enabled features):
-	VkPhysicalDeviceFeatures enabled_features;
-	VkPhysicalDeviceVulkan11Features enabled_features_11;
-	VkPhysicalDeviceVulkan12Features enabled_features_12;
-	VkPhysicalDeviceVulkan13Features enabled_features_13;
-} vka_vulkan_t;
-
-typedef struct
-{
-	char name[NM_MAX_NAME_LENGTH];
 	VkDescriptorPool pool;
 
 	/*---------------*
@@ -264,6 +199,21 @@ typedef struct
 typedef struct
 {
 	char name[NM_MAX_NAME_LENGTH];
+	VkImage image;
+	VkImageView image_view;
+
+	/*---------------*
+	 * Configuration *
+	 *---------------*/
+	uint8_t is_swapchain_image;	// Prevents invalid creation/destruction of VkImage.
+	VkFormat format;
+	VkImageAspectFlags aspect_mask;
+	uint32_t mip_levels;
+} vka_image_t;
+
+typedef struct
+{
+	char name[NM_MAX_NAME_LENGTH];
 	VkSampler sampler;
 
 	/*---------------*
@@ -273,6 +223,65 @@ typedef struct
 	float max_anisotropy;
 	VkBorderColor border_colour;
 } vka_sampler_t;
+
+typedef struct
+{
+	char name[NM_MAX_NAME_LENGTH];
+	SDL_Window *window;
+	VkInstance instance;
+	VkSurfaceKHR surface;
+
+	VkPhysicalDevice physical_device;
+	VkDevice device;
+	uint32_t graphics_family_index;
+	VkQueue graphics_queue;
+	uint32_t present_family_index;
+	VkQueue present_queue;
+
+	VkCommandPool command_pool;
+	vka_command_buffer_t command_buffers[VKA_MAX_FRAMES_IN_FLIGHT];
+
+	VkSemaphore image_available[VKA_MAX_FRAMES_IN_FLIGHT];
+	VkSemaphore render_complete[VKA_MAX_FRAMES_IN_FLIGHT];
+
+	uint32_t num_swapchain_images;
+	VkFormat swapchain_format;
+	VkExtent2D swapchain_extent;
+	VkSwapchainKHR swapchain;
+	vka_image_t *swapchain_images;
+
+	uint8_t recreate_swapchain;
+	uint8_t recreate_pipelines;
+	uint8_t current_frame;
+	uint32_t current_swapchain_index;
+
+	char error[NM_MAX_ERROR_LENGTH];
+	#ifdef VKA_DEBUG
+	VkDebugUtilsMessengerEXT debug_messenger;
+	#endif
+
+	#ifdef VKA_NUKLEAR
+	struct nk_context nuklear_context;
+	struct nk_buffer nuklear_commands;
+	struct nk_draw_null_texture nuklear_null_texture;
+	vka_allocation_t nuklear_allocation;
+	vka_buffer_t nuklear_buffer_index;
+	vka_buffer_t nuklear_buffer_vertex;
+	#endif
+
+	/*---------------*
+	 * Configuration *
+	 *---------------*/
+	uint8_t window_resizable;
+	int minimum_window_width;
+	int minimum_window_height;
+
+	// Feature requirements (after device creation, these represent enabled features):
+	VkPhysicalDeviceFeatures enabled_features;
+	VkPhysicalDeviceVulkan11Features enabled_features_11;
+	VkPhysicalDeviceVulkan12Features enabled_features_12;
+	VkPhysicalDeviceVulkan13Features enabled_features_13;
+} vka_vulkan_t;
 
 /**************************
  * Information containers *
@@ -325,6 +334,8 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
 void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
 void vka_bind_pipeline(vka_command_buffer_t *command_buffer, vka_pipeline_t *pipeline);
 int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader);
+int vka_create_shader_from_array(vka_vulkan_t *vulkan, vka_shader_t *shader,
+				size_t code_size, uint32_t *shader_code);
 void vka_destroy_shader(vka_vulkan_t *vulkan, vka_shader_t *shader);
 
 // Command buffers and fences:
@@ -387,50 +398,19 @@ int vka_get_next_swapchain_image(vka_vulkan_t *vulkan);
 #ifdef VKA_NUKLEAR
 typedef struct
 {
-	float position[3];
+	float position[2];
 	uint8_t colour[4];
 	float uv[2];
 } vka_nuklear_vertex_t;
 
-typedef struct
-{
-	char name[NM_MAX_NAME_LENGTH];
-	vka_image_t image;
-
-	/*---------------*
-	 * Configuration *
-	 *---------------*/
-	uint8_t is_default;
-	struct nk_font_config config;
-} vka_nuklear_font_t;
-
-typedef struct
-{
-	struct nk_context context;
-	struct nk_buffer commands;
-
-	vka_allocation_t allocation;
-
-	vka_buffer_t vertex_buffer;
-	vka_buffer_t index_buffer;
-
-	struct nk_font_atlas font_atlas;
-	vka_nuklear_font_t default_font;
-
-	vka_sampler_t sampler;
-	struct nk_draw_null_texture null_texture;
-
-	vka_pipeline_t pipeline;
-} vka_nuklear_t;
-
-int vka_setup_nuklear(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear);
-void vka_shutdown_nuklear(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear);
-int vka_nuklear_create_font(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear, vka_nuklear_font_t *font);
-void vka_nuklear_destroy_font(vka_vulkan_t *vulkan, vka_nuklear_font_t *font);
-void vka_nuklear_process_event(vka_nuklear_t *nuklear, SDL_Event *event);
-void vka_nuklear_process_grab(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear);
+int vka_nuklear_setup(vka_vulkan_t *vulkan);
+void vka_nuklear_shutdown(vka_vulkan_t *vulkan);
+void vka_nuklear_draw(vka_vulkan_t *vulkan);
+void vka_nuklear_process_event(vka_vulkan_t *vulkan, SDL_Event *event);
+void vka_nuklear_process_grab(vka_vulkan_t *vulkan);
 void vka_nuklear_clipboard_copy(nk_handle usr, const char *text, int len);
 void vka_nuklear_clipboard_paste(nk_handle usr, struct nk_text_edit *edit);
+int vka_nuklear_create_default_shaders(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline);
 #endif
 
 #ifdef VKA_DEBUG

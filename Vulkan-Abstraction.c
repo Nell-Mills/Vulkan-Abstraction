@@ -44,12 +44,20 @@ int vka_setup_vulkan(vka_vulkan_t *vulkan)
 	if (vka_create_swapchain(vulkan)) { return -1; }
 	vulkan->recreate_pipelines = 0;
 
+	#ifdef VKA_NUKLEAR
+	if (vka_nuklear_setup(vulkan)) { return -1; }
+	#endif
+
 	return 0;
 }
 
 void vka_shutdown_vulkan(vka_vulkan_t *vulkan)
 {
 	vka_device_wait_idle(vulkan);
+
+	#ifdef VKA_NUKLEAR
+	vka_nuklear_shutdown(vulkan);
+	#endif
 
 	if (vulkan->swapchain_images)
 	{
@@ -1458,10 +1466,37 @@ int vka_create_shader(vka_vulkan_t *vulkan, vka_shader_t *shader)
 		return -1;
 	}
 
-	if (shader->shader) { vkDestroyShaderModule(vulkan->device, shader->shader, NULL); }
+	vka_destroy_shader(vulkan, shader);
 	shader->shader = temp;
 
 	free(shader_code);
+	return 0;
+}
+
+int vka_create_shader_from_array(vka_vulkan_t *vulkan, vka_shader_t *shader,
+				size_t code_size, uint32_t *shader_code)
+{
+	VkShaderModuleCreateInfo shader_module_info;
+	memset(&shader_module_info, 0, sizeof(shader_module_info));
+	shader_module_info.sType	= VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	shader_module_info.pNext	= NULL;
+	shader_module_info.flags	= 0;
+	shader_module_info.codeSize	= code_size;
+	shader_module_info.pCode	= shader_code;
+
+	// Create a temporary shader module in case this doesn't work out:
+	VkShaderModule temp = VK_NULL_HANDLE;
+	if (vkCreateShaderModule(vulkan->device, &shader_module_info, NULL, &temp) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Could not create shader module from array for \"%s\".", shader->path);
+		free(shader_code);
+		return -1;
+	}
+
+	vka_destroy_shader(vulkan, shader);
+	shader->shader = temp;
+
 	return 0;
 }
 
@@ -2421,8 +2456,11 @@ int vka_map_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 
 void vka_unmap_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 {
-	vkUnmapMemory(vulkan->device, allocation->memory);
-	allocation->mapped_data = NULL;
+	if (allocation->mapped_data)
+	{
+		vkUnmapMemory(vulkan->device, allocation->memory);
+		allocation->mapped_data = NULL;
+	}
 }
 
 /***********
@@ -2463,117 +2501,280 @@ int vka_get_next_swapchain_image(vka_vulkan_t *vulkan)
 }
 
 #ifdef VKA_NUKLEAR
-int vka_setup_nuklear(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear)
+int vka_nuklear_setup(vka_vulkan_t *vulkan)
 {
-	/* Things to do before running this function:
-	 * - Set shader paths in pipeline. */
-	if (!nk_init_default(&(nuklear->context), 0))
+	if (!nk_init_default(&(vulkan->nuklear_context), NULL))
 	{
 		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
 			"Could not initialise Nuklear context.");
 		return -1;
 	}
+	vulkan->nuklear_context.clip.copy = vka_nuklear_clipboard_copy;
+	vulkan->nuklear_context.clip.paste = vka_nuklear_clipboard_paste;
+	vulkan->nuklear_context.clip.userdata = nk_handle_ptr(NULL);
+	nk_buffer_init_default(&(vulkan->nuklear_commands));
 
-	nuklear->context.clip.copy = vka_nuklear_clipboard_copy;
-	nuklear->context.clip.paste = vka_nuklear_clipboard_paste;
-	nuklear->context.clip.userdata = nk_handle_ptr(0);
+	strcpy(vulkan->nuklear_buffer_index.name, "Nuklear index buffer");
+	vulkan->nuklear_buffer_index.allocation = &(vulkan->nuklear_allocation);
+	vulkan->nuklear_buffer_index.usage = VKA_BUFFER_USAGE_INDEX;
+	vulkan->nuklear_buffer_index.index_type = VK_INDEX_TYPE_UINT32;
+	vulkan->nuklear_buffer_index.size = VKA_NUKLEAR_MAX_INDEX_BUFFER;
+	if (vka_create_buffer(vulkan, &(vulkan->nuklear_buffer_index))) { return -1; }
+	if (vka_get_buffer_requirements(vulkan, &(vulkan->nuklear_buffer_index))) { return -1; }
 
-	nk_buffer_init_default(&(nuklear->commands));
+	strcpy(vulkan->nuklear_buffer_vertex.name, "Nuklear vertex buffer");
+	vulkan->nuklear_buffer_vertex.allocation = &(vulkan->nuklear_allocation);
+	vulkan->nuklear_buffer_vertex.usage = VKA_BUFFER_USAGE_VERTEX;
+	vulkan->nuklear_buffer_vertex.size = VKA_NUKLEAR_MAX_VERTEX_BUFFER;
+	if (vka_create_buffer(vulkan, &(vulkan->nuklear_buffer_vertex))) { return -1; }
+	if (vka_get_buffer_requirements(vulkan, &(vulkan->nuklear_buffer_vertex))) { return -1; }
 
-	// TODO - create vertex memory buffers and allocation
-
-	if (vka_create_sampler(vulkan, &(nuklear->sampler))) { return -1; }
-
-	// TODO - create font
-	nuklear->default_font.config = nk_font_config(17.f);
-	nuklear->default_font.config.oversample_h = 1;
-	nuklear->default_font.config.pixel_snap = 1;
-	if (vka_nuklear_create_font(vulkan, nuklear, &(nuklear->default_font))) { return -1; }
-	nk_style_set_font(&(nuklear->context), &(nuklear->font_atlas.default_font->handle));
-
-	// TODO - initialise null texture
-
-	// TODO - set up pipeline config
-
-	return 0;
-}
-
-void vka_shutdown_nuklear(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear)
-{
-	vka_device_wait_idle(vulkan);
-
-	nk_font_atlas_clear(&(nuklear->font_atlas));
-	nk_free(&(nuklear->context));
-
-	vka_destroy_pipeline(vulkan, &(nuklear->pipeline));
-	vka_nuklear_destroy_font(vulkan, &(nuklear->default_font));
-	vka_destroy_sampler(vulkan, &(nuklear->sampler));
-	vka_destroy_allocation(vulkan, &(nuklear->allocation));
-
-	nk_buffer_free(&(nuklear->commands));
-}
-
-int vka_nuklear_create_font(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear, vka_nuklear_font_t *font)
-{
-	// TODO - decide how to fill font atlas if non-default fonts are desired.
-	nk_font_atlas_init_default(&(nuklear->font_atlas));
-	nk_font_atlas_begin(&(nuklear->font_atlas));
-
-	if (font->is_default)
-	{
-		nuklear->font_atlas.default_font = nk_font_atlas_add_default(&(nuklear->font_atlas),
-								font->config.size, &(font->config));
-	}
-	else
-	{
-		// TODO
-		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH, "Non-default font not implemented.");
-		return -1;
-	}
-
-	if (!nuklear->font_atlas.default_font)
-	{
-		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
-			"Could not create font \"%s\".", font->name);
-		return -1;
-	}
-
-	int width;
-	int height;
-	const void *texture = nk_font_atlas_bake(&(nuklear->font_atlas), &width,
-						&height, NK_FONT_ATLAS_RGBA32);
-	if (!texture)
-	{
-		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
-			"Could not bake font \"%s\".", font->name);
-		return -1;
-	}
-
-	// TODO - set up vka_image_t.
-
-	nk_font_atlas_end(&(nuklear->font_atlas), nk_handle_id(0), 0);
-	nk_font_atlas_cleanup(&(nuklear->font_atlas));
+	strcpy(vulkan->nuklear_allocation.name, "Nuklear allocation");
+	vulkan->nuklear_allocation.properties[0] = VKA_MEMORY_HOST;
+	if (vka_create_allocation(vulkan, &(vulkan->nuklear_allocation))) { return -1; }
+	if (vka_map_memory(vulkan, &(vulkan->nuklear_allocation))) { return -1; }
+	if (vka_bind_buffer_memory(vulkan, &(vulkan->nuklear_buffer_index))) { return -1; }
+	if (vka_bind_buffer_memory(vulkan, &(vulkan->nuklear_buffer_vertex))) { return -1; }
 
 	return 0;
 }
 
-void vka_nuklear_destroy_font(vka_vulkan_t *vulkan, vka_nuklear_font_t *font)
+void vka_nuklear_shutdown(vka_vulkan_t *vulkan)
 {
-	vka_destroy_image(vulkan, &(font->image));
+	vka_destroy_buffer(vulkan, &(vulkan->nuklear_buffer_vertex));
+	vka_destroy_buffer(vulkan, &(vulkan->nuklear_buffer_index));
+	vka_unmap_memory(vulkan, &(vulkan->nuklear_allocation));
+	vka_destroy_allocation(vulkan, &(vulkan->nuklear_allocation));
+
+	nk_free(&(vulkan->nuklear_context));
+	nk_buffer_free(&(vulkan->nuklear_commands));
 }
 
-void vka_nuklear_process_event(vka_nuklear_t *nuklear, SDL_Event *event)
+void vka_nuklear_draw(vka_vulkan_t *vulkan)
 {
-	// TODO
-	(void)nuklear;
-	(void)event;
+	// Expects descriptor sets and pipeline bound already.
+	struct nk_convert_config convert_config = {0};
+	static const struct nk_draw_vertex_layout_element vertex_layout[] =
+	{
+		{NK_VERTEX_POSITION, NK_FORMAT_FLOAT, NK_OFFSETOF(vka_nuklear_vertex_t, position)},
+		{NK_VERTEX_COLOR, NK_FORMAT_R8G8B8A8, NK_OFFSETOF(vka_nuklear_vertex_t, colour)},
+		{NK_VERTEX_TEXCOORD, NK_FORMAT_FLOAT, NK_OFFSETOF(vka_nuklear_vertex_t, uv)},
+		{NK_VERTEX_LAYOUT_END}
+	};
+	convert_config.vertex_layout = vertex_layout;
+	convert_config.vertex_size = sizeof(vka_nuklear_vertex_t);
+	convert_config.vertex_alignment = NK_ALIGNOF(vka_nuklear_vertex_t);
+	convert_config.tex_null = vulkan->nuklear_null_texture;
+	convert_config.circle_segment_count = 22;
+	convert_config.curve_segment_count = 22;
+	convert_config.arc_segment_count = 22;
+	convert_config.global_alpha = 1.0;
+	convert_config.shape_AA = NK_ANTI_ALIASING_ON;
+	convert_config.line_AA = NK_ANTI_ALIASING_ON;
+
+	// Put vertex and index data into Vulkan buffers (function arguments are mapped memory):
+	void *index_data = vulkan->nuklear_allocation.mapped_data;
+	void *vertex_data = index_data + vulkan->nuklear_buffer_vertex.offset;
+	struct nk_buffer nuklear_index_buffer;
+	struct nk_buffer nuklear_vertex_buffer;
+	nk_buffer_init_fixed(&nuklear_index_buffer, index_data, VKA_NUKLEAR_MAX_INDEX_BUFFER);
+	nk_buffer_init_fixed(&nuklear_vertex_buffer, vertex_data, VKA_NUKLEAR_MAX_VERTEX_BUFFER);
+	nk_convert(&(vulkan->nuklear_context), &(vulkan->nuklear_commands), &nuklear_vertex_buffer,
+							&nuklear_index_buffer, &convert_config);
+
+	// Bind index/vertex buffers:
+	vka_bind_vertex_buffers(&(vulkan->command_buffers[vulkan->current_frame]),
+		&(vulkan->nuklear_buffer_index), 1, &(vulkan->nuklear_buffer_vertex));
+
+	// Draw GUI elements:
+	uint32_t index_offset = 0;
+	const struct nk_draw_command *command;
+	nk_draw_foreach(command, &(vulkan->nuklear_context), &(vulkan->nuklear_commands))
+	{
+		if (!command->elem_count) { continue; }
+		vka_draw_indexed(&(vulkan->command_buffers[vulkan->current_frame]),
+					command->elem_count, index_offset, 0);
+		index_offset += command->elem_count;
+	}
+
+	// Clear buffers:
+	nk_clear(&(vulkan->nuklear_context));
+	nk_buffer_clear(&(vulkan->nuklear_commands));
 }
 
-void vka_nuklear_process_grab(vka_vulkan_t *vulkan, vka_nuklear_t *nuklear)
+void vka_nuklear_process_event(vka_vulkan_t *vulkan, SDL_Event *event)
 {
-	// TODO
-	(void)vulkan;
-	(void)nuklear;
+	struct nk_context *context = &(vulkan->nuklear_context);
+	if ((event->type == SDL_EVENT_KEY_UP) || (event->type == SDL_EVENT_KEY_DOWN))
+	{
+		int down = (event->type == SDL_EVENT_KEY_DOWN);
+		const bool *keyboard_state = SDL_GetKeyboardState(NULL);
+		SDL_Keycode key = event->key.key;
+		if ((key == SDLK_LSHIFT) || (key == SDLK_RSHIFT))
+		{
+			nk_input_key(context, NK_KEY_SHIFT, down);
+		}
+		else if (key == SDLK_DELETE)
+		{
+			nk_input_key(context, NK_KEY_DEL, down);
+		}
+		else if (key == SDLK_RETURN)
+		{
+			nk_input_key(context, NK_KEY_ENTER, down);
+		}
+		else if (key == SDLK_TAB)
+		{
+			nk_input_key(context, NK_KEY_TAB, down);
+		}
+		else if (key == SDLK_BACKSPACE)
+		{
+			nk_input_key(context, NK_KEY_BACKSPACE, down);
+		}
+		else if (key == SDLK_HOME)
+		{
+			nk_input_key(context, NK_KEY_TEXT_START, down);
+			nk_input_key(context, NK_KEY_SCROLL_START, down);
+		}
+		else if (key == SDLK_END)
+		{
+			nk_input_key(context, NK_KEY_TEXT_END, down);
+			nk_input_key(context, NK_KEY_SCROLL_END, down);
+		}
+		else if (key == SDLK_PAGEUP)
+		{
+			nk_input_key(context, NK_KEY_SCROLL_UP, down);
+		}
+		else if (key == SDLK_PAGEDOWN)
+		{
+			nk_input_key(context, NK_KEY_SCROLL_DOWN, down);
+		}
+		else if (key == SDLK_Z)
+		{
+			nk_input_key(context, NK_KEY_TEXT_UNDO, down &&
+				keyboard_state[SDL_SCANCODE_LCTRL]);
+		}
+		else if (key == SDLK_R)
+		{
+			nk_input_key(context, NK_KEY_TEXT_REDO, down &&
+				keyboard_state[SDL_SCANCODE_LCTRL]);
+		}
+		else if (key == SDLK_C)
+		{
+			nk_input_key(context, NK_KEY_COPY, down &&
+				keyboard_state[SDL_SCANCODE_LCTRL]);
+		}
+		else if (key == SDLK_V)
+		{
+			nk_input_key(context, NK_KEY_PASTE, down &&
+				keyboard_state[SDL_SCANCODE_LCTRL]);
+		}
+		else if (key == SDLK_X)
+		{
+			nk_input_key(context, NK_KEY_CUT, down &&
+				keyboard_state[SDL_SCANCODE_LCTRL]);
+		}
+		else if (key == SDLK_B)
+		{
+			nk_input_key(context, NK_KEY_TEXT_LINE_START, down &&
+					keyboard_state[SDL_SCANCODE_LCTRL]);
+		}
+		else if (key == SDLK_E)
+		{
+			nk_input_key(context, NK_KEY_TEXT_LINE_END, down &&
+					keyboard_state[SDL_SCANCODE_LCTRL]);
+		}
+		else if (key == SDLK_UP)
+		{
+			nk_input_key(context, NK_KEY_UP, down);
+		}
+		else if (key == SDLK_DOWN)
+		{
+			nk_input_key(context, NK_KEY_DOWN, down);
+		}
+		else if (key == SDLK_LEFT)
+		{
+			if (keyboard_state[SDL_SCANCODE_LCTRL] == 0)
+			{
+				nk_input_key(context, NK_KEY_LEFT, down);
+			}
+			else
+			{
+				nk_input_key(context, NK_KEY_TEXT_WORD_LEFT, down);
+			}
+		}
+		else if (key == SDLK_RIGHT)
+		{
+			if (keyboard_state[SDL_SCANCODE_LCTRL] == 0)
+			{
+				nk_input_key(context, NK_KEY_RIGHT, down);
+			}
+			else
+			{
+				nk_input_key(context, NK_KEY_TEXT_WORD_RIGHT, down);
+			}
+		}
+	}
+	else if ((event->type == SDL_EVENT_MOUSE_BUTTON_UP) ||
+		(event->type == SDL_EVENT_MOUSE_BUTTON_DOWN))
+	{
+		int down = (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+		const int x = event->button.x;
+		const int y = event->button.y;
+		if (event->button.button == SDL_BUTTON_LEFT)
+		{
+			if (event->button.clicks > 1)
+			{
+				nk_input_button(context, NK_BUTTON_DOUBLE, x, y, down);
+			}
+			nk_input_button(context, NK_BUTTON_LEFT, x, y, down);
+		}
+		else if (event->button.button == SDL_BUTTON_RIGHT)
+		{
+			nk_input_button(context, NK_BUTTON_RIGHT, x, y, down);
+		}
+		else if (event->button.button == SDL_BUTTON_MIDDLE)
+		{
+			nk_input_button(context, NK_BUTTON_MIDDLE, x, y, down);
+		}
+	}
+	else if (event->type == SDL_EVENT_MOUSE_MOTION)
+	{
+		if (context->input.mouse.grabbed != 0)
+		{
+			int x = (int)(context->input.mouse.prev.x);
+			int y = (int)(context->input.mouse.prev.y);
+			nk_input_motion(context, x + event->motion.xrel, y + event->motion.yrel);
+		}
+		else { nk_input_motion(context, event->motion.x, event->motion.y); }
+	}
+	else if (event->type == SDL_EVENT_TEXT_INPUT)
+	{
+		nk_glyph glyph;
+		memcpy(glyph, event->text.text, NK_UTF_SIZE);
+		nk_input_glyph(context, glyph);
+	}
+	else if (event->type == SDL_EVENT_MOUSE_WHEEL)
+	{
+		nk_input_scroll(context, nk_vec2((float)(event->wheel.x), (float)(event->wheel.y)));
+	}
+}
+
+void vka_nuklear_process_grab(vka_vulkan_t *vulkan)
+{
+	// Put the mouse in relative mode if button is held down:
+	struct nk_context *context = &(vulkan->nuklear_context);
+	if (context->input.mouse.grab) { SDL_SetWindowRelativeMouseMode(vulkan->window, true); }
+	else if (context->input.mouse.ungrab)
+	{
+		SDL_SetWindowRelativeMouseMode(vulkan->window, false);
+		SDL_WarpMouseInWindow(vulkan->window, (int)(context->input.mouse.prev.x),
+						(int)(context->input.mouse.prev.y));
+	}
+	else if (context->input.mouse.grabbed)
+	{
+		context->input.mouse.pos.x = context->input.mouse.prev.x;
+		context->input.mouse.pos.y = context->input.mouse.prev.y;
+	}
 }
 
 void vka_nuklear_clipboard_copy(nk_handle usr, const char *text, int len)
@@ -2597,6 +2798,163 @@ void vka_nuklear_clipboard_paste(nk_handle usr, struct nk_text_edit *edit)
 
 	const char *text = SDL_GetClipboardText();
 	if (text) { nk_textedit_paste(edit, text, nk_strlen(text)); }
+}
+
+int vka_nuklear_create_default_shaders(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
+{
+	strcpy(pipeline->shaders[VKA_SHADER_TYPE_VERTEX].path, "GUI default vertex shader");
+	size_t vertex_shader_size = 1904;
+	uint32_t vertex_shader[] =
+	{
+		0x07230203, 0x00010000, 0x000d000a, 0x0000002c, 0x00000000, 0x00020011,
+		0x00000001, 0x0006000b, 0x00000001, 0x4c534c47, 0x6474732e, 0x3035342e,
+		0x00000000, 0x0003000e, 0x00000000, 0x00000001, 0x000b000f, 0x00000000,
+		0x00000004, 0x6e69616d, 0x00000000, 0x0000000d, 0x0000001a, 0x00000024,
+		0x00000026, 0x00000029, 0x0000002a, 0x00030003, 0x00000002, 0x000001c2,
+		0x000a0004, 0x475f4c47, 0x4c474f4f, 0x70635f45, 0x74735f70, 0x5f656c79,
+		0x656e696c, 0x7269645f, 0x69746365, 0x00006576, 0x00080004, 0x475f4c47,
+		0x4c474f4f, 0x6e695f45, 0x64756c63, 0x69645f65, 0x74636572, 0x00657669,
+		0x00040005, 0x00000004, 0x6e69616d, 0x00000000, 0x00060005, 0x0000000b,
+		0x505f6c67, 0x65567265, 0x78657472, 0x00000000, 0x00060006, 0x0000000b,
+		0x00000000, 0x505f6c67, 0x7469736f, 0x006e6f69, 0x00070006, 0x0000000b,
+		0x00000001, 0x505f6c67, 0x746e696f, 0x657a6953, 0x00000000, 0x00070006,
+		0x0000000b, 0x00000002, 0x435f6c67, 0x4470696c, 0x61747369, 0x0065636e,
+		0x00070006, 0x0000000b, 0x00000003, 0x435f6c67, 0x446c6c75, 0x61747369,
+		0x0065636e, 0x00030005, 0x0000000d, 0x00000000, 0x00060005, 0x00000011,
+		0x6e656353, 0x696e5565, 0x6d726f66, 0x00000000, 0x00050006, 0x00000011,
+		0x00000000, 0x65646f6d, 0x0000006c, 0x00050006, 0x00000011, 0x00000001,
+		0x77656976, 0x00000000, 0x00060006, 0x00000011, 0x00000002, 0x73726570,
+		0x74636570, 0x00657669, 0x00070006, 0x00000011, 0x00000003, 0x6874726f,
+		0x6172676f, 0x63696870, 0x00000000, 0x00060006, 0x00000011, 0x00000004,
+		0x5f78616d, 0x756c6176, 0x00000065, 0x00060006, 0x00000011, 0x00000005,
+		0x5f6e696d, 0x756c6176, 0x00000065, 0x00060005, 0x00000013, 0x6e656373,
+		0x6e755f65, 0x726f6669, 0x0000006d, 0x00070005, 0x0000001a, 0x74726576,
+		0x695f7865, 0x6f705f6e, 0x69746973, 0x00006e6f, 0x00070005, 0x00000024,
+		0x74726576, 0x6f5f7865, 0x635f7475, 0x756f6c6f, 0x00000072, 0x00070005,
+		0x00000026, 0x74726576, 0x695f7865, 0x6f635f6e, 0x72756f6c, 0x00000000,
+		0x00060005, 0x00000029, 0x74726576, 0x6f5f7865, 0x755f7475, 0x00000076,
+		0x00060005, 0x0000002a, 0x74726576, 0x695f7865, 0x76755f6e, 0x00000000,
+		0x00050048, 0x0000000b, 0x00000000, 0x0000000b, 0x00000000, 0x00050048,
+		0x0000000b, 0x00000001, 0x0000000b, 0x00000001, 0x00050048, 0x0000000b,
+		0x00000002, 0x0000000b, 0x00000003, 0x00050048, 0x0000000b, 0x00000003,
+		0x0000000b, 0x00000004, 0x00030047, 0x0000000b, 0x00000002, 0x00040048,
+		0x00000011, 0x00000000, 0x00000005, 0x00050048, 0x00000011, 0x00000000,
+		0x00000023, 0x00000000, 0x00050048, 0x00000011, 0x00000000, 0x00000007,
+		0x00000010, 0x00040048, 0x00000011, 0x00000001, 0x00000005, 0x00050048,
+		0x00000011, 0x00000001, 0x00000023, 0x00000040, 0x00050048, 0x00000011,
+		0x00000001, 0x00000007, 0x00000010, 0x00040048, 0x00000011, 0x00000002,
+		0x00000005, 0x00050048, 0x00000011, 0x00000002, 0x00000023, 0x00000080,
+		0x00050048, 0x00000011, 0x00000002, 0x00000007, 0x00000010, 0x00040048,
+		0x00000011, 0x00000003, 0x00000005, 0x00050048, 0x00000011, 0x00000003,
+		0x00000023, 0x000000c0, 0x00050048, 0x00000011, 0x00000003, 0x00000007,
+		0x00000010, 0x00050048, 0x00000011, 0x00000004, 0x00000023, 0x00000100,
+		0x00050048, 0x00000011, 0x00000005, 0x00000023, 0x00000104, 0x00030047,
+		0x00000011, 0x00000002, 0x00040047, 0x00000013, 0x00000022, 0x00000000,
+		0x00040047, 0x00000013, 0x00000021, 0x00000000, 0x00040047, 0x0000001a,
+		0x0000001e, 0x00000000, 0x00040047, 0x00000024, 0x0000001e, 0x00000000,
+		0x00040047, 0x00000026, 0x0000001e, 0x00000001, 0x00040047, 0x00000029,
+		0x0000001e, 0x00000001, 0x00040047, 0x0000002a, 0x0000001e, 0x00000002,
+		0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016,
+		0x00000006, 0x00000020, 0x00040017, 0x00000007, 0x00000006, 0x00000004,
+		0x00040015, 0x00000008, 0x00000020, 0x00000000, 0x0004002b, 0x00000008,
+		0x00000009, 0x00000001, 0x0004001c, 0x0000000a, 0x00000006, 0x00000009,
+		0x0006001e, 0x0000000b, 0x00000007, 0x00000006, 0x0000000a, 0x0000000a,
+		0x00040020, 0x0000000c, 0x00000003, 0x0000000b, 0x0004003b, 0x0000000c,
+		0x0000000d, 0x00000003, 0x00040015, 0x0000000e, 0x00000020, 0x00000001,
+		0x0004002b, 0x0000000e, 0x0000000f, 0x00000000, 0x00040018, 0x00000010,
+		0x00000007, 0x00000004, 0x0008001e, 0x00000011, 0x00000010, 0x00000010,
+		0x00000010, 0x00000010, 0x00000006, 0x00000006, 0x00040020, 0x00000012,
+		0x00000002, 0x00000011, 0x0004003b, 0x00000012, 0x00000013, 0x00000002,
+		0x0004002b, 0x0000000e, 0x00000014, 0x00000003, 0x00040020, 0x00000015,
+		0x00000002, 0x00000010, 0x00040017, 0x00000018, 0x00000006, 0x00000002,
+		0x00040020, 0x00000019, 0x00000001, 0x00000018, 0x0004003b, 0x00000019,
+		0x0000001a, 0x00000001, 0x0004002b, 0x00000006, 0x0000001c, 0x00000000,
+		0x0004002b, 0x00000006, 0x0000001d, 0x3f800000, 0x00040020, 0x00000022,
+		0x00000003, 0x00000007, 0x0004003b, 0x00000022, 0x00000024, 0x00000003,
+		0x00040020, 0x00000025, 0x00000001, 0x00000007, 0x0004003b, 0x00000025,
+		0x00000026, 0x00000001, 0x00040020, 0x00000028, 0x00000003, 0x00000018,
+		0x0004003b, 0x00000028, 0x00000029, 0x00000003, 0x0004003b, 0x00000019,
+		0x0000002a, 0x00000001, 0x00050036, 0x00000002, 0x00000004, 0x00000000,
+		0x00000003, 0x000200f8, 0x00000005, 0x00050041, 0x00000015, 0x00000016,
+		0x00000013, 0x00000014, 0x0004003d, 0x00000010, 0x00000017, 0x00000016,
+		0x0004003d, 0x00000018, 0x0000001b, 0x0000001a, 0x00050051, 0x00000006,
+		0x0000001e, 0x0000001b, 0x00000000, 0x00050051, 0x00000006, 0x0000001f,
+		0x0000001b, 0x00000001, 0x00070050, 0x00000007, 0x00000020, 0x0000001e,
+		0x0000001f, 0x0000001c, 0x0000001d, 0x00050091, 0x00000007, 0x00000021,
+		0x00000017, 0x00000020, 0x00050041, 0x00000022, 0x00000023, 0x0000000d,
+		0x0000000f, 0x0003003e, 0x00000023, 0x00000021, 0x0004003d, 0x00000007,
+		0x00000027, 0x00000026, 0x0003003e, 0x00000024, 0x00000027, 0x0004003d,
+		0x00000018, 0x0000002b, 0x0000002a, 0x0003003e, 0x00000029, 0x0000002b,
+		0x000100fd, 0x00010038
+	};
+
+	if (vka_create_shader_from_array(vulkan, &(pipeline->shaders[VKA_SHADER_TYPE_VERTEX]),
+							vertex_shader_size, vertex_shader))
+	{
+		return -1;
+	}
+
+	strcpy(pipeline->shaders[VKA_SHADER_TYPE_FRAGMENT].path, "GUI default fragment shader");
+	size_t fragment_shader_size = 1136;
+	uint32_t fragment_shader[] =
+	{
+		0x07230203, 0x00010000, 0x000d000a, 0x00000014, 0x00000000, 0x00020011,
+		0x00000001, 0x0006000b, 0x00000001, 0x4c534c47, 0x6474732e, 0x3035342e,
+		0x00000000, 0x0003000e, 0x00000000, 0x00000001, 0x0008000f, 0x00000004,
+		0x00000004, 0x6e69616d, 0x00000000, 0x00000009, 0x0000000b, 0x00000013,
+		0x00030010, 0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001c2,
+		0x000a0004, 0x475f4c47, 0x4c474f4f, 0x70635f45, 0x74735f70, 0x5f656c79,
+		0x656e696c, 0x7269645f, 0x69746365, 0x00006576, 0x00080004, 0x475f4c47,
+		0x4c474f4f, 0x6e695f45, 0x64756c63, 0x69645f65, 0x74636572, 0x00657669,
+		0x00040005, 0x00000004, 0x6e69616d, 0x00000000, 0x00070005, 0x00000009,
+		0x67617266, 0x746e656d, 0x74756f5f, 0x6c6f635f, 0x0072756f, 0x00070005,
+		0x0000000b, 0x74726576, 0x6f5f7865, 0x635f7475, 0x756f6c6f, 0x00000072,
+		0x00060005, 0x0000000e, 0x6e656353, 0x696e5565, 0x6d726f66, 0x00000000,
+		0x00050006, 0x0000000e, 0x00000000, 0x65646f6d, 0x0000006c, 0x00050006,
+		0x0000000e, 0x00000001, 0x77656976, 0x00000000, 0x00060006, 0x0000000e,
+		0x00000002, 0x73726570, 0x74636570, 0x00657669, 0x00070006, 0x0000000e,
+		0x00000003, 0x6874726f, 0x6172676f, 0x63696870, 0x00000000, 0x00060006,
+		0x0000000e, 0x00000004, 0x5f78616d, 0x756c6176, 0x00000065, 0x00060006,
+		0x0000000e, 0x00000005, 0x5f6e696d, 0x756c6176, 0x00000065, 0x00060005,
+		0x00000010, 0x6e656373, 0x6e755f65, 0x726f6669, 0x0000006d, 0x00060005,
+		0x00000013, 0x74726576, 0x6f5f7865, 0x755f7475, 0x00000076, 0x00040047,
+		0x00000009, 0x0000001e, 0x00000000, 0x00040047, 0x0000000b, 0x0000001e,
+		0x00000000, 0x00040048, 0x0000000e, 0x00000000, 0x00000005, 0x00050048,
+		0x0000000e, 0x00000000, 0x00000023, 0x00000000, 0x00050048, 0x0000000e,
+		0x00000000, 0x00000007, 0x00000010, 0x00040048, 0x0000000e, 0x00000001,
+		0x00000005, 0x00050048, 0x0000000e, 0x00000001, 0x00000023, 0x00000040,
+		0x00050048, 0x0000000e, 0x00000001, 0x00000007, 0x00000010, 0x00040048,
+		0x0000000e, 0x00000002, 0x00000005, 0x00050048, 0x0000000e, 0x00000002,
+		0x00000023, 0x00000080, 0x00050048, 0x0000000e, 0x00000002, 0x00000007,
+		0x00000010, 0x00040048, 0x0000000e, 0x00000003, 0x00000005, 0x00050048,
+		0x0000000e, 0x00000003, 0x00000023, 0x000000c0, 0x00050048, 0x0000000e,
+		0x00000003, 0x00000007, 0x00000010, 0x00050048, 0x0000000e, 0x00000004,
+		0x00000023, 0x00000100, 0x00050048, 0x0000000e, 0x00000005, 0x00000023,
+		0x00000104, 0x00030047, 0x0000000e, 0x00000002, 0x00040047, 0x00000010,
+		0x00000022, 0x00000000, 0x00040047, 0x00000010, 0x00000021, 0x00000000,
+		0x00040047, 0x00000013, 0x0000001e, 0x00000001, 0x00020013, 0x00000002,
+		0x00030021, 0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020,
+		0x00040017, 0x00000007, 0x00000006, 0x00000004, 0x00040020, 0x00000008,
+		0x00000003, 0x00000007, 0x0004003b, 0x00000008, 0x00000009, 0x00000003,
+		0x00040020, 0x0000000a, 0x00000001, 0x00000007, 0x0004003b, 0x0000000a,
+		0x0000000b, 0x00000001, 0x00040018, 0x0000000d, 0x00000007, 0x00000004,
+		0x0008001e, 0x0000000e, 0x0000000d, 0x0000000d, 0x0000000d, 0x0000000d,
+		0x00000006, 0x00000006, 0x00040020, 0x0000000f, 0x00000002, 0x0000000e,
+		0x0004003b, 0x0000000f, 0x00000010, 0x00000002, 0x00040017, 0x00000011,
+		0x00000006, 0x00000002, 0x00040020, 0x00000012, 0x00000001, 0x00000011,
+		0x0004003b, 0x00000012, 0x00000013, 0x00000001, 0x00050036, 0x00000002,
+		0x00000004, 0x00000000, 0x00000003, 0x000200f8, 0x00000005, 0x0004003d,
+		0x00000007, 0x0000000c, 0x0000000b, 0x0003003e, 0x00000009, 0x0000000c,
+		0x000100fd, 0x00010038
+	};
+
+	if (vka_create_shader_from_array(vulkan, &(pipeline->shaders[VKA_SHADER_TYPE_FRAGMENT]),
+							fragment_shader_size, fragment_shader))
+	{
+		return -1;
+	}
+
+	return 0;
 }
 #endif
 
