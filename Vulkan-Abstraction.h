@@ -198,11 +198,14 @@ typedef struct
 	char name[NM_MAX_NAME_LENGTH];
 	VkImage image;
 	VkImageView image_view;
+	vka_allocation_t *allocation;
 
 	/*---------------*
 	 * Configuration *
 	 *---------------*/
 	uint8_t is_swapchain_image;	// Prevents invalid creation/destruction of VkImage.
+	uint32_t width;
+	uint32_t height;
 	VkFormat format;
 	VkImageAspectFlags aspect_mask;
 	uint32_t mip_levels;

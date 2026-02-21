@@ -1955,7 +1955,7 @@ int vka_create_image(vka_vulkan_t *vulkan, vka_image_t *image)
 {
 	if (!image->is_swapchain_image)
 	{
-
+		// TODO create image.
 	}
 
 	if (image->mip_levels < 1) { image->mip_levels = 1; }
@@ -2517,7 +2517,7 @@ int vka_nuklear_setup(vka_vulkan_t *vulkan)
 	strcpy(vulkan->nuklear_buffer_index.name, "Nuklear index buffer");
 	vulkan->nuklear_buffer_index.allocation = &(vulkan->nuklear_allocation);
 	vulkan->nuklear_buffer_index.usage = VKA_BUFFER_USAGE_INDEX;
-	vulkan->nuklear_buffer_index.index_type = VK_INDEX_TYPE_UINT32;
+	vulkan->nuklear_buffer_index.index_type = VK_INDEX_TYPE_UINT16;
 	vulkan->nuklear_buffer_index.size = VKA_NUKLEAR_MAX_INDEX_BUFFER;
 	if (vka_create_buffer(vulkan, &(vulkan->nuklear_buffer_index))) { return -1; }
 	if (vka_get_buffer_requirements(vulkan, &(vulkan->nuklear_buffer_index))) { return -1; }
