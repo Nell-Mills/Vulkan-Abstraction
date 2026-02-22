@@ -733,7 +733,7 @@ int vka_create_swapchain(vka_vulkan_t *vulkan)
 
 	for (uint32_t i = 0; i < vulkan->num_swapchain_images; i++)
 	{
-		if (vka_create_image(vulkan, &(vulkan->swapchain_images[i]))) { return -1; }
+		if (vka_create_image_view(vulkan, &(vulkan->swapchain_images[i]))) { return -1; }
 	}
 
 	if (old_format != vulkan->swapchain_format) { vulkan->recreate_pipelines = 1; }
@@ -1849,13 +1849,7 @@ int vka_update_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descri
 	else if ((descriptor_set->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) ||
 		(descriptor_set->type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER))
 	{
-		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
-			"Descriptor type (storage image or sampler) for set \"%s\" "
-			"not implemented yet.", descriptor_set->name);
-		return -1;
-
-		// TODO:
-		/*image_info = malloc(descriptor_set->count * sizeof(VkDescriptorImageInfo));
+		image_info = malloc(descriptor_set->count * sizeof(VkDescriptorImageInfo));
 		if (!image_info)
 		{
 			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
@@ -1870,7 +1864,7 @@ int vka_update_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descri
 			image_info[i].sampler		= images[i]->sampler->sampler;
 			image_info[i].imageView		= images[i]->image_view;
 			image_info[i].imageLayout	= VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		}*/
+		}
 	}
 	else
 	{
@@ -1953,11 +1947,43 @@ void vka_destroy_sampler(vka_vulkan_t *vulkan, vka_sampler_t *sampler)
 
 int vka_create_image(vka_vulkan_t *vulkan, vka_image_t *image)
 {
+	if (image->mip_levels < 1) { image->mip_levels = 1; }
+
 	if (!image->is_swapchain_image)
 	{
-		// TODO create image.
+		VkImageCreateInfo image_info;
+		memset(&image_info, 0, sizeof(image_info));
+		image_info.sType			= VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		image_info.pNext			= NULL;
+		image_info.flags			= 0;
+		image_info.imageType			= VK_IMAGE_TYPE_2D;
+		image_info.format			= image->format;
+		image_info.extent.width			= image->width;
+		image_info.extent.height		= image->height;
+		image_info.extent.depth			= 1;
+		image_info.mipLevels			= image->mip_levels;
+		image_info.arrayLayers			= 1;
+		image_info.samples			= VK_SAMPLE_COUNT_1_BIT;
+		image_info.tiling			= VK_IMAGE_TILING_OPTIMAL;
+		image_info.usage			= image->usage;
+		image_info.sharingMode			= VK_SHARING_MODE_EXCLUSIVE;
+		image_info.queueFamilyIndexCount	= 0;
+		image_info.pQueueFamilyIndices		= NULL;
+		image_info.initialLayout		= VK_IMAGE_LAYOUT_UNDEFINED;
+
+		if (vkCreateImage(vulkan->device, &image_info, NULL, &(image->image)) != VK_SUCCESS)
+		{
+			snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+				"Could not create image \"%s\".", image->name);
+			return -1;
+		}
 	}
 
+	return 0;
+}
+
+int vka_create_image_view(vka_vulkan_t *vulkan, vka_image_t *image)
+{
 	if (image->mip_levels < 1) { image->mip_levels = 1; }
 
 	VkImageViewCreateInfo view_info;
@@ -2004,6 +2030,103 @@ void vka_destroy_image(vka_vulkan_t *vulkan, vka_image_t *image)
 		}
 		image->image = VK_NULL_HANDLE;
 	}
+}
+
+int vka_get_image_requirements(vka_vulkan_t *vulkan, vka_image_t *image)
+{
+	if (!image->allocation)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Image \"%s\" has no valid allocation.", image->name);
+		return -1;
+	}
+
+	if (image->allocation->memory)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Image \"%s\" already has memory allocated.", image->name);
+		return -1;
+	}
+
+	// Get memory requirements and add to current allocation information:
+	VkMemoryRequirements requirements;
+	vkGetImageMemoryRequirements(vulkan->device, image->image, &requirements);
+
+	if (!image->allocation->requirements.memoryTypeBits)
+	{
+		image->allocation->requirements.memoryTypeBits = requirements.memoryTypeBits;
+		image->allocation->requirements.alignment = requirements.alignment;
+	}
+
+	if (image->allocation->requirements.memoryTypeBits != requirements.memoryTypeBits)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Memory type bits for image \"%s\" don't match allocation \"%s\".",
+			image->name, image->allocation->name);
+		return -1;
+	}
+
+	// Set offset of current image to current accumulated memory size:
+	image->offset = image->allocation->requirements.size;
+	image->allocation->requirements.size += requirements.size;
+
+	return 0;
+}
+
+int vka_bind_image_memory(vka_vulkan_t *vulkan, vka_image_t *image)
+{
+	if (vkBindImageMemory(vulkan->device, image->image,
+		image->allocation->memory, image->offset) != VK_SUCCESS)
+	{
+		snprintf(vulkan->error, NM_MAX_ERROR_LENGTH,
+			"Could not bind memory for image \"%s\".", image->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+void vka_copy_image(vka_command_buffer_t *command_buffer,
+	vka_buffer_t *source, vka_image_t *destination)
+{
+	vka_image_info_t image_info = {0};
+	image_info.src_access_mask	= VK_ACCESS_NONE;
+	image_info.dst_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
+	image_info.old_layout		= VK_IMAGE_LAYOUT_UNDEFINED;
+	image_info.new_layout		= VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	image_info.src_stage_mask	= VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+	image_info.dst_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+	vka_transition_image(command_buffer, destination, &image_info);
+
+	// Copy staging buffer to image:
+	VkBufferImageCopy image_copy;
+	memset(&image_copy, 0, sizeof(VkBufferImageCopy));
+	image_copy.bufferOffset				= 0;
+	image_copy.bufferRowLength			= 0;
+	image_copy.bufferImageHeight			= 0;
+	image_copy.imageSubresource.aspectMask		= destination->aspect_mask;
+	image_copy.imageSubresource.mipLevel		= 0;
+	image_copy.imageSubresource.baseArrayLayer	= 0;
+	image_copy.imageSubresource.layerCount		= 1;
+	image_copy.imageOffset.x			= 0;
+	image_copy.imageOffset.y			= 0;
+	image_copy.imageOffset.z			= 0;
+	image_copy.imageExtent.width			= destination->width;
+	image_copy.imageExtent.height			= destination->height;
+	image_copy.imageExtent.depth			= 1;
+
+	vkCmdCopyBufferToImage(command_buffer->buffer, source->buffer, destination->image,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy);
+
+	image_info.src_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
+	image_info.dst_access_mask	= VK_ACCESS_SHADER_READ_BIT;
+	image_info.old_layout		= VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	image_info.new_layout		= VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	image_info.src_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
+	image_info.dst_stage_mask	= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+
+	vka_transition_image(command_buffer, destination, &image_info);
 }
 
 void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_t *image,

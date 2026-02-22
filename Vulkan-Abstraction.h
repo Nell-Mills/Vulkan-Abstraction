@@ -47,6 +47,8 @@
 				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
 #define VKA_BUFFER_USAGE_STAGING VK_BUFFER_USAGE_TRANSFER_SRC_BIT
 
+#define VKA_IMAGE_USAGE_SAMPLED VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+
 #define VKA_MEMORY_HOST VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 #define VKA_MEMORY_DEVICE VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 
@@ -180,6 +182,19 @@ typedef struct
 typedef struct
 {
 	char name[NM_MAX_NAME_LENGTH];
+	VkSampler sampler;
+
+	/*---------------*
+	 * Configuration *
+	 *---------------*/
+	VkBool32 anisotropy_enable;
+	float max_anisotropy;
+	VkBorderColor border_colour;
+} vka_sampler_t;
+
+typedef struct
+{
+	char name[NM_MAX_NAME_LENGTH];
 	VkBuffer buffer;
 	vka_allocation_t *allocation;
 	void *data; // Intended for scene uniform buffer updates. Is NOT managed by buffer struct.
@@ -199,30 +214,20 @@ typedef struct
 	VkImage image;
 	VkImageView image_view;
 	vka_allocation_t *allocation;
+	vka_sampler_t *sampler;
 
 	/*---------------*
 	 * Configuration *
 	 *---------------*/
 	uint8_t is_swapchain_image;	// Prevents invalid creation/destruction of VkImage.
+	VkDeviceSize offset;		// Offset inside allocation.
+	VkFormat format;
 	uint32_t width;
 	uint32_t height;
-	VkFormat format;
-	VkImageAspectFlags aspect_mask;
 	uint32_t mip_levels;
+	VkImageUsageFlags usage;
+	VkImageAspectFlags aspect_mask;
 } vka_image_t;
-
-typedef struct
-{
-	char name[NM_MAX_NAME_LENGTH];
-	VkSampler sampler;
-
-	/*---------------*
-	 * Configuration *
-	 *---------------*/
-	VkBool32 anisotropy_enable;
-	float max_anisotropy;
-	VkBorderColor border_colour;
-} vka_sampler_t;
 
 typedef struct
 {
@@ -358,7 +363,12 @@ int vka_update_descriptor_set(vka_vulkan_t *vulkan, vka_descriptor_set_t *descri
 int vka_create_sampler(vka_vulkan_t *vulkan, vka_sampler_t *sampler);
 void vka_destroy_sampler(vka_vulkan_t *vulkan, vka_sampler_t *sampler);
 int vka_create_image(vka_vulkan_t *vulkan, vka_image_t *image);
+int vka_create_image_view(vka_vulkan_t *vulkan, vka_image_t *image);
 void vka_destroy_image(vka_vulkan_t *vulkan, vka_image_t *image);
+int vka_get_image_requirements(vka_vulkan_t *vulkan, vka_image_t *image);
+int vka_bind_image_memory(vka_vulkan_t *vulkan, vka_image_t *image);
+void vka_copy_image(vka_command_buffer_t *command_buffer,
+	vka_buffer_t *source, vka_image_t *destination);
 void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_t *image,
 						vka_image_info_t *image_info);
 
