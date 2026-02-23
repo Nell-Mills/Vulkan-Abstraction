@@ -54,10 +54,9 @@ For Nuklear GUI functionality, define VKA_NUKLEAR when compiling.
 ## Compilation:
 
 Depends on:
-
-- [Config](https://github.com/Nell-Mills/Config) - expects <NM-Config/Config.h\>
 - Volk (included)
 - SDL3
+- Nuklear, if VKA_NUKLEAR is defined (included)
 
 Add "Include" to search path: "-I Include"  
 Link SDL3: -lSDL3

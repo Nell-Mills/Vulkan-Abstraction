@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <NM-Config/Config.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <Volk/volk.h>
@@ -27,13 +26,11 @@
 #define VKA_API_VERSION_MAJOR 1
 #define VKA_API_VERSION_MINOR 3
 
-#ifndef VKA_MAX_FRAMES_IN_FLIGHT
 #define VKA_MAX_FRAMES_IN_FLIGHT 2
-#endif
-
-#ifndef VKA_MAX_VERTEX_ATTRIBUTES
 #define VKA_MAX_VERTEX_ATTRIBUTES 4
-#endif
+#define VKA_MAX_NAME_LENGTH 64
+#define VKA_MAX_PATH_LENGTH 256
+#define VKA_MAX_ERROR_LENGTH 1024
 
 #define VKA_SHADER_TYPE_VERTEX		0
 #define VKA_SHADER_TYPE_FRAGMENT	1
@@ -58,7 +55,7 @@
 
 typedef struct
 {
-	char name[NM_MAX_NAME_LENGTH];
+	char name[VKA_MAX_NAME_LENGTH];
 	VkCommandBuffer buffer;
 	VkFence fence;
 
@@ -78,7 +75,7 @@ typedef struct
 
 typedef struct
 {
-	char name[NM_MAX_NAME_LENGTH];
+	char name[VKA_MAX_NAME_LENGTH];
 	VkDescriptorPool pool;
 
 	/*---------------*
@@ -93,7 +90,7 @@ typedef struct
 
 typedef struct
 {
-	char name[NM_MAX_NAME_LENGTH];
+	char name[VKA_MAX_NAME_LENGTH];
 	VkDescriptorSetLayout layout;
 	VkDescriptorSet set;
 	void **data;
@@ -110,13 +107,13 @@ typedef struct
 
 typedef struct
 {
-	char path[NM_MAX_PATH_LENGTH];
+	char path[VKA_MAX_PATH_LENGTH];
 	VkShaderModule shader;
 } vka_shader_t;
 
 typedef struct
 {
-	char name[NM_MAX_NAME_LENGTH];
+	char name[VKA_MAX_NAME_LENGTH];
 	VkPipelineLayout layout;
 	VkPipeline pipeline;
 	vka_shader_t shaders[3];
@@ -166,7 +163,7 @@ typedef struct
 
 typedef struct
 {
-	char name[NM_MAX_NAME_LENGTH];
+	char name[VKA_MAX_NAME_LENGTH];
 	VkDeviceMemory memory;
 	void *mapped_data;
 
@@ -181,7 +178,7 @@ typedef struct
 
 typedef struct
 {
-	char name[NM_MAX_NAME_LENGTH];
+	char name[VKA_MAX_NAME_LENGTH];
 	VkSampler sampler;
 
 	/*---------------*
@@ -194,7 +191,7 @@ typedef struct
 
 typedef struct
 {
-	char name[NM_MAX_NAME_LENGTH];
+	char name[VKA_MAX_NAME_LENGTH];
 	VkBuffer buffer;
 	vka_allocation_t *allocation;
 	void *data; // Intended for scene uniform buffer updates. Is NOT managed by buffer struct.
@@ -210,7 +207,7 @@ typedef struct
 
 typedef struct
 {
-	char name[NM_MAX_NAME_LENGTH];
+	char name[VKA_MAX_NAME_LENGTH];
 	VkImage image;
 	VkImageView image_view;
 	vka_allocation_t *allocation;
@@ -231,7 +228,7 @@ typedef struct
 
 typedef struct
 {
-	char name[NM_MAX_NAME_LENGTH];
+	char name[VKA_MAX_NAME_LENGTH];
 	SDL_Window *window;
 	VkInstance instance;
 	VkSurfaceKHR surface;
@@ -260,7 +257,7 @@ typedef struct
 	uint8_t current_frame;
 	uint32_t current_swapchain_index;
 
-	char error[NM_MAX_ERROR_LENGTH];
+	char error[VKA_MAX_ERROR_LENGTH];
 	#ifdef VKA_DEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
 	#endif
