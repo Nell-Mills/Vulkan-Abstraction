@@ -2258,6 +2258,61 @@ int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
 	return 0;
 }
 
+int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t *buffers)
+{
+	// Convenience function to set up multiple buffers. Does not destroy buffers on failure.
+	if (!num_buffers || !buffers)
+	{
+		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
+			"Could not set up buffers: no buffers provided.");
+		return -1;
+	}
+
+	// Check all buffers are using same allocation:
+	for (uint32_t i = 1; i < num_buffers; i++)
+	{
+		if (buffers[i].allocation != buffers[i - 1].allocation)
+		{
+			snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
+				"Buffer \"%s\" is not using the same allocation as buffer \"%s\".",
+				buffers[i].name, buffers[i - 1].name);
+			return -1;
+		}
+	}
+
+	// Check all buffers have a size:
+	for (uint32_t i = 0; i < num_buffers; i++)
+	{
+		if (!(buffers[i].size))
+		{
+			snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
+				"Buffer \"%s\" has a size of 0.", buffers[i].name);
+			return -1;
+		}
+	}
+
+	// Create buffers and get requirements:
+	for (uint32_t i = 0; i < num_buffers; i++)
+	{
+		if (vka_create_buffer(vulkan, &(buffers[i]))) { return -1; }
+		if (vka_get_buffer_requirements(vulkan, &(buffers[i]))) { return -1; }
+	}
+
+	// If there is no allocation, stop here:
+	if (!buffers[0].allocation) { return 0; }
+
+	// Otherwise set it up:
+	if (vka_create_allocation(vulkan, &(buffers[0].allocation))) { return -1; }
+
+	// Bind buffer memory:
+	for (uint32_t i = 0; i < num_buffers; i++)
+	{
+		if (vka_bind_buffer_memory(vulkan, &(buffers[i]))) { return -1; }
+	}
+
+	return 0;
+}
+
 void vka_copy_buffer(vka_command_buffer_t *command_buffer,
 	vka_buffer_t *source, vka_buffer_t *destination)
 {
@@ -2476,6 +2531,16 @@ int vka_present_image(vka_vulkan_t *vulkan)
 	return 0;
 }
 
+/***********
+ * Compute *
+ ***********/
+
+void vka_dispatch(vka_command_buffer_t *command_buffer, uint32_t group_count_x,
+			uint32_t group_count_y, uint32_t group_count_z)
+{
+	vkCmdDispatch(command_buffer->buffer, group_count_x, group_count_y, group_count_z);
+}
+
 /**********
  * Memory *
  **********/
@@ -2675,6 +2740,7 @@ void vka_nuklear_shutdown(vka_vulkan_t *vulkan)
 
 void vka_nuklear_draw(vka_vulkan_t *vulkan)
 {
+	// FIXME - strange artefacts when resizing window with GUI elements present.
 	// Expects descriptor sets and pipeline bound already.
 	struct nk_convert_config convert_config = {0};
 	static const struct nk_draw_vertex_layout_element vertex_layout[] =

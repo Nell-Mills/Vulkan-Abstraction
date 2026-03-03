@@ -374,6 +374,7 @@ int vka_create_buffer(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 void vka_destroy_buffer(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 int vka_get_buffer_requirements(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
+int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t *buffers);
 void vka_copy_buffer(vka_command_buffer_t *command_buffer,
 	vka_buffer_t *source, vka_buffer_t *destination);
 void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer);
@@ -390,6 +391,10 @@ void vka_draw(vka_command_buffer_t *command_buffer, uint32_t num_vertices, int32
 void vka_draw_indexed(vka_command_buffer_t *command_buffer, uint32_t num_indices,
 				uint32_t index_offset, int32_t vertex_offset);
 int vka_present_image(vka_vulkan_t *vulkan);
+
+// Compute:
+void vka_dispatch(vka_command_buffer_t *command_buffer, uint32_t group_count_x,
+			uint32_t group_count_y, uint32_t group_count_z);
 
 // Memory:
 int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation);
