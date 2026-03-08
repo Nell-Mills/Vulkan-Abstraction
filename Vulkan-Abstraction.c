@@ -7,8 +7,8 @@
 int vka_setup_vulkan(vka_vulkan_t *vulkan)
 {
 	if (!strcmp(vulkan->name, "")) { strcpy(vulkan->name, "Vulkan Application"); }
-	if (vulkan->minimum_window_width < 640) { vulkan->minimum_window_width = 640; }
-	if (vulkan->minimum_window_height < 480) { vulkan->minimum_window_height = 480; }
+	if (vulkan->minimum_window_width < 256) { vulkan->minimum_window_width = 256; }
+	if (vulkan->minimum_window_height < 256) { vulkan->minimum_window_height = 256; }
 
 	vulkan->enabled_features_11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
 
@@ -439,13 +439,11 @@ int vka_create_semaphores(vka_vulkan_t *vulkan)
 
 int vka_create_command_pool(vka_vulkan_t *vulkan)
 {
-	// TODO - is VK_COMMAND_POOL_CREATE_TRANSIENT_BIT needed?
 	VkCommandPoolCreateInfo pool_info;
 	memset(&pool_info, 0, sizeof(pool_info));
 	pool_info.sType			= VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	pool_info.pNext			= NULL;
-	pool_info.flags			= VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
-						VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	pool_info.flags			= VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 	pool_info.queueFamilyIndex	= vulkan->graphics_family_index;
 
 	if (vkCreateCommandPool(vulkan->device, &pool_info, NULL,
@@ -1205,7 +1203,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	rasterization_info.pNext			= NULL;
 	rasterization_info.flags			= 0;
 	rasterization_info.depthClampEnable		= VK_FALSE;
-	rasterization_info.rasterizerDiscardEnable	= VK_FALSE; // TODO - check this.
+	rasterization_info.rasterizerDiscardEnable	= VK_FALSE;
 	rasterization_info.polygonMode			= pipeline->polygon_mode;
 	rasterization_info.cullMode			= pipeline->cull_mode;
 	rasterization_info.frontFace			= VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -1215,7 +1213,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	rasterization_info.depthBiasSlopeFactor		= 0.f;
 	rasterization_info.lineWidth			= pipeline->line_width;
 
-	// Multisampling (TODO):
+	// Multisampling:
 	VkPipelineMultisampleStateCreateInfo multisample_info;
 	memset(&multisample_info, 0, sizeof(multisample_info));
 	multisample_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -1228,15 +1226,15 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	multisample_info.alphaToCoverageEnable	= VK_FALSE;
 	multisample_info.alphaToOneEnable	= VK_FALSE;
 
-	// Depth stencil (TODO):
+	// Depth stencil:
 	VkPipelineDepthStencilStateCreateInfo depth_info;
 	memset(&depth_info, 0, sizeof(depth_info));
 	depth_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 	depth_info.pNext			= NULL;
 	depth_info.flags			= 0;
-	depth_info.depthTestEnable		= VK_FALSE;
-	depth_info.depthWriteEnable		= VK_FALSE;
-	depth_info.depthCompareOp		= VK_COMPARE_OP_LESS_OR_EQUAL;
+	depth_info.depthTestEnable		= pipeline->depth_test_enable;
+	depth_info.depthWriteEnable		= pipeline->depth_write_enable;
+	depth_info.depthCompareOp		= pipeline->depth_compare_op;
 	depth_info.depthBoundsTestEnable	= VK_FALSE;
 	depth_info.stencilTestEnable		= VK_FALSE;
 
@@ -1307,7 +1305,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	pipeline_rendering_info.colorAttachmentCount	= 1;
 	pipeline_rendering_info.pColorAttachmentFormats	= &(pipeline->colour_attachment_format);
 	pipeline_rendering_info.depthAttachmentFormat	= pipeline->depth_attachment_format;
-	pipeline_rendering_info.stencilAttachmentFormat	= VK_FORMAT_UNDEFINED;
+	pipeline_rendering_info.stencilAttachmentFormat	= pipeline->depth_attachment_format;
 
 	// Create pipeline:
 	VkGraphicsPipelineCreateInfo pipeline_info;
@@ -2086,6 +2084,38 @@ int vka_bind_image_memory(vka_vulkan_t *vulkan, vka_image_t *image)
 	return 0;
 }
 
+int vka_create_depth_image(vka_vulkan_t *vulkan, vka_image_t *image)
+{
+	/* Creates depth image with same dimensions as swapchain.
+	 * Destroys previous image first. */
+	if (!image->allocation)
+	{
+		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
+			"No allocation provided for depth image \"%s\".", image->name);
+		return -1;
+	}
+
+	vka_destroy_image(vulkan, image);
+	vka_destroy_allocation(vulkan, image->allocation);
+
+	image->is_swapchain_image	= 0;
+	image->offset			= 0;
+	image->format			= VK_FORMAT_D32_SFLOAT;
+	image->width			= vulkan->swapchain_extent.width;
+	image->height			= vulkan->swapchain_extent.height;
+	image->mip_levels		= 1;
+	image->usage			= VKA_IMAGE_USAGE_DEPTH;
+	image->aspect_mask		= VK_IMAGE_ASPECT_DEPTH_BIT;
+
+	if (vka_create_image(vulkan, image)) { return -1; }
+	if (vka_get_image_requirements(vulkan, image)) { return -1; }
+	if (vka_create_allocation(vulkan, image->allocation)) { return -1; }
+	if (vka_bind_image_memory(vulkan, image)) { return -1; }
+	if (vka_create_image_view(vulkan, image)) { return -1; }
+
+	return 0;
+}
+
 void vka_copy_image(vka_command_buffer_t *command_buffer,
 	vka_buffer_t *source, vka_image_t *destination)
 {
@@ -2387,20 +2417,37 @@ void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t
 
 	vka_transition_image(command_buffer, render_info->colour_image, &image_info);
 
-	VkRenderingAttachmentInfo colour_attachment_info;
-	memset(&colour_attachment_info, 0, sizeof(colour_attachment_info));
-	colour_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-	colour_attachment_info.pNext			= NULL;
-	colour_attachment_info.imageView		= render_info->colour_image->image_view;
-	colour_attachment_info.imageLayout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	colour_attachment_info.resolveMode		= VK_RESOLVE_MODE_NONE;
-	colour_attachment_info.resolveImageView		= VK_NULL_HANDLE;
-	colour_attachment_info.resolveImageLayout	= VK_IMAGE_LAYOUT_UNDEFINED;
-	colour_attachment_info.loadOp			= render_info->colour_load_op;
-	colour_attachment_info.storeOp			= render_info->colour_store_op;
-	colour_attachment_info.clearValue		= render_info->colour_clear_value;
+	VkRenderingAttachmentInfo colour_info;
+	memset(&colour_info, 0, sizeof(colour_info));
+	colour_info.sType		= VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+	colour_info.pNext		= NULL;
+	colour_info.imageView		= render_info->colour_image->image_view;
+	colour_info.imageLayout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	colour_info.resolveMode		= VK_RESOLVE_MODE_NONE;
+	colour_info.resolveImageView	= VK_NULL_HANDLE;
+	colour_info.resolveImageLayout	= VK_IMAGE_LAYOUT_UNDEFINED;
+	colour_info.loadOp		= render_info->colour_load_op;
+	colour_info.storeOp		= render_info->colour_store_op;
+	colour_info.clearValue		= render_info->colour_clear_value;
 
-	// TODO - depth attachment info.
+	VkRenderingAttachmentInfo depth_info;
+	memset(&depth_info, 0, sizeof(depth_info));
+	VkRenderingAttachmentInfo *depth_info_pointer = NULL;
+	if (render_info->depth_image)
+	{
+		depth_info_pointer = &depth_info;
+
+		depth_info.sType		= VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+		depth_info.pNext		= NULL;
+		depth_info.imageView		= render_info->depth_image->image_view;
+		depth_info.imageLayout		= VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		depth_info.resolveMode		= VK_RESOLVE_MODE_NONE;
+		depth_info.resolveImageView	= VK_NULL_HANDLE;
+		depth_info.resolveImageLayout	= VK_IMAGE_LAYOUT_UNDEFINED;
+		depth_info.loadOp		= render_info->depth_load_op;
+		depth_info.storeOp		= render_info->depth_store_op;
+		depth_info.clearValue		= render_info->depth_clear_value;
+	}
 
 	VkRenderingInfo rendering_info;
 	memset(&rendering_info, 0, sizeof(rendering_info));
@@ -2411,9 +2458,9 @@ void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t
 	rendering_info.layerCount		= 1;
 	rendering_info.viewMask			= 0;
 	rendering_info.colorAttachmentCount	= 1;
-	rendering_info.pColorAttachments	= &colour_attachment_info;
-	rendering_info.pDepthAttachment		= NULL; // TODO.
-	rendering_info.pStencilAttachment	= NULL;
+	rendering_info.pColorAttachments	= &colour_info;
+	rendering_info.pDepthAttachment		= depth_info_pointer;
+	rendering_info.pStencilAttachment	= depth_info_pointer;
 
 	vkCmdBeginRendering(command_buffer->buffer, &rendering_info);
 }
@@ -2990,7 +3037,7 @@ void vka_nuklear_clipboard_paste(nk_handle usr, struct nk_text_edit *edit)
 	const char *text = SDL_GetClipboardText();
 	if (text) { nk_textedit_paste(edit, text, nk_strlen(text)); }
 }
-#endif
+#endif // VKA_NUKLEAR
 
 #ifdef VKA_DEBUG
 int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan)
@@ -3500,4 +3547,4 @@ void vka_print_sampler(FILE *file, vka_sampler_t *sampler)
 	if (!sampler->sampler) { fprintf(file, "Sampler\t\t\t\t\t= VK_NULL_HANDLE\n"); }
 	else { fprintf(file, "Sampler\t\t\t\t\t= %p\n", sampler->sampler); }
 }
-#endif
+#endif // VKA_DEBUG

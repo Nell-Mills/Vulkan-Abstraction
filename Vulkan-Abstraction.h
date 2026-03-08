@@ -32,10 +32,12 @@
 #define VKA_MAX_PATH_LENGTH 256
 #define VKA_MAX_ERROR_LENGTH 1024
 
+// Shader types (index into pipeline shaders array):
 #define VKA_SHADER_TYPE_VERTEX		0
 #define VKA_SHADER_TYPE_FRAGMENT	1
 #define VKA_SHADER_TYPE_COMPUTE		2
 
+// Buffer usage types:
 #define VKA_BUFFER_USAGE_INDEX VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT
 #define VKA_BUFFER_USAGE_VERTEX VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
 #define VKA_BUFFER_USAGE_UNIFORM VK_BUFFER_USAGE_TRANSFER_DST_BIT | \
@@ -44,8 +46,12 @@
 				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
 #define VKA_BUFFER_USAGE_STAGING VK_BUFFER_USAGE_TRANSFER_SRC_BIT
 
+// Image usage types:
+#define VKA_IMAGE_USAGE_DEPTH VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | \
+						VK_IMAGE_USAGE_SAMPLED_BIT
 #define VKA_IMAGE_USAGE_SAMPLED VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
 
+// Memory properties:
 #define VKA_MEMORY_HOST VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 #define VKA_MEMORY_DEVICE VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 
@@ -93,7 +99,7 @@ typedef struct
 	char name[VKA_MAX_NAME_LENGTH];
 	VkDescriptorSetLayout layout;
 	VkDescriptorSet set;
-	void **data;
+	void **data; // Array of vka_image_t * or vka_buffer_t *.
 	vka_descriptor_pool_t *pool;
 
 	/*---------------*
@@ -147,8 +153,10 @@ typedef struct
 	VkCullModeFlags cull_mode;	// Default VK_CULL_MODE_NONE.
 	float line_width;		// If < 1.f, gets set to 1.f for graphics pipelines.
 
-	// TODO multisampling.
-	// TODO depth stencil.
+	// Depth stencil:
+	VkBool32 depth_test_enable;
+	VkBool32 depth_write_enable;
+	VkCompareOp depth_compare_op;
 
 	// Blend:
 	VkBool32 blend_enable;		// Default VK_FALSE.
@@ -364,6 +372,7 @@ int vka_create_image_view(vka_vulkan_t *vulkan, vka_image_t *image);
 void vka_destroy_image(vka_vulkan_t *vulkan, vka_image_t *image);
 int vka_get_image_requirements(vka_vulkan_t *vulkan, vka_image_t *image);
 int vka_bind_image_memory(vka_vulkan_t *vulkan, vka_image_t *image);
+int vka_create_depth_image(vka_vulkan_t *vulkan, vka_image_t *image);
 void vka_copy_image(vka_command_buffer_t *command_buffer,
 	vka_buffer_t *source, vka_image_t *destination);
 void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_t *image,
