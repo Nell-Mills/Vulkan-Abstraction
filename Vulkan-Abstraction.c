@@ -2260,7 +2260,9 @@ int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
 
 int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t *buffers)
 {
-	// Convenience function to set up multiple buffers. Does not destroy buffers on failure.
+	/* Convenience function to set up multiple buffers.
+	 * Does not destroy buffers on failure.
+	 * Expects all buffers to use the same allocation. */
 	if (!num_buffers || !buffers)
 	{
 		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
@@ -2302,7 +2304,7 @@ int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t 
 	if (!buffers[0].allocation) { return 0; }
 
 	// Otherwise set it up:
-	if (vka_create_allocation(vulkan, &(buffers[0].allocation))) { return -1; }
+	if (vka_create_allocation(vulkan, buffers[0].allocation)) { return -1; }
 
 	// Bind buffer memory:
 	for (uint32_t i = 0; i < num_buffers; i++)
