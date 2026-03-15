@@ -325,8 +325,8 @@ typedef struct
 } vka_image_info_t;
 
 // Main Vulkan base:
-int vka_setup_vulkan(vka_vulkan_t *vulkan);
-void vka_shutdown_vulkan(vka_vulkan_t *vulkan);
+int vka_set_up_vulkan(vka_vulkan_t *vulkan);
+void vka_shut_down_vulkan(vka_vulkan_t *vulkan);
 int vka_create_window(vka_vulkan_t *vulkan);
 int vka_create_instance(vka_vulkan_t *vulkan);
 int vka_create_surface(vka_vulkan_t *vulkan);
@@ -372,7 +372,6 @@ int vka_create_image_view(vka_vulkan_t *vulkan, vka_image_t *image);
 void vka_destroy_image(vka_vulkan_t *vulkan, vka_image_t *image);
 int vka_get_image_requirements(vka_vulkan_t *vulkan, vka_image_t *image);
 int vka_bind_image_memory(vka_vulkan_t *vulkan, vka_image_t *image);
-int vka_create_depth_image(vka_vulkan_t *vulkan, vka_image_t *image);
 void vka_copy_image(vka_command_buffer_t *command_buffer,
 	vka_buffer_t *source, vka_image_t *destination);
 void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_t *image,
@@ -424,8 +423,8 @@ typedef struct
 	float uv[2];
 } vka_nuklear_vertex_t;
 
-int vka_nuklear_setup(vka_vulkan_t *vulkan);
-void vka_nuklear_shutdown(vka_vulkan_t *vulkan);
+int vka_nuklear_set_up(vka_vulkan_t *vulkan);
+void vka_nuklear_shut_down(vka_vulkan_t *vulkan);
 void vka_nuklear_draw(vka_vulkan_t *vulkan);
 void vka_nuklear_process_event(vka_vulkan_t *vulkan, SDL_Event *event);
 void vka_nuklear_process_grab(vka_vulkan_t *vulkan);

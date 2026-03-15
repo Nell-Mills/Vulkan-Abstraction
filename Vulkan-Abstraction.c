@@ -4,7 +4,7 @@
  * Main Vulkan base *
  ********************/
 
-int vka_setup_vulkan(vka_vulkan_t *vulkan)
+int vka_set_up_vulkan(vka_vulkan_t *vulkan)
 {
 	if (!strcmp(vulkan->name, "")) { strcpy(vulkan->name, "Vulkan Application"); }
 	if (vulkan->minimum_window_width < 256) { vulkan->minimum_window_width = 256; }
@@ -45,18 +45,18 @@ int vka_setup_vulkan(vka_vulkan_t *vulkan)
 	vulkan->recreate_pipelines = 0;
 
 	#ifdef VKA_NUKLEAR
-	if (vka_nuklear_setup(vulkan)) { return -1; }
+	if (vka_nuklear_set_up(vulkan)) { return -1; }
 	#endif
 
 	return 0;
 }
 
-void vka_shutdown_vulkan(vka_vulkan_t *vulkan)
+void vka_shut_down_vulkan(vka_vulkan_t *vulkan)
 {
 	vka_device_wait_idle(vulkan);
 
 	#ifdef VKA_NUKLEAR
-	vka_nuklear_shutdown(vulkan);
+	vka_nuklear_shut_down(vulkan);
 	#endif
 
 	if (vulkan->swapchain_images)
@@ -2084,38 +2084,6 @@ int vka_bind_image_memory(vka_vulkan_t *vulkan, vka_image_t *image)
 	return 0;
 }
 
-int vka_create_depth_image(vka_vulkan_t *vulkan, vka_image_t *image)
-{
-	/* Creates depth image with same dimensions as swapchain.
-	 * Destroys previous image first. */
-	if (!image->allocation)
-	{
-		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
-			"No allocation provided for depth image \"%s\".", image->name);
-		return -1;
-	}
-
-	vka_destroy_image(vulkan, image);
-	vka_destroy_allocation(vulkan, image->allocation);
-
-	image->is_swapchain_image	= 0;
-	image->offset			= 0;
-	image->format			= VK_FORMAT_D32_SFLOAT;
-	image->width			= vulkan->swapchain_extent.width;
-	image->height			= vulkan->swapchain_extent.height;
-	image->mip_levels		= 1;
-	image->usage			= VKA_IMAGE_USAGE_DEPTH;
-	image->aspect_mask		= VK_IMAGE_ASPECT_DEPTH_BIT;
-
-	if (vka_create_image(vulkan, image)) { return -1; }
-	if (vka_get_image_requirements(vulkan, image)) { return -1; }
-	if (vka_create_allocation(vulkan, image->allocation)) { return -1; }
-	if (vka_bind_image_memory(vulkan, image)) { return -1; }
-	if (vka_create_image_view(vulkan, image)) { return -1; }
-
-	return 0;
-}
-
 void vka_copy_image(vka_command_buffer_t *command_buffer,
 	vka_buffer_t *source, vka_image_t *destination)
 {
@@ -2738,7 +2706,7 @@ int vka_get_next_swapchain_image(vka_vulkan_t *vulkan)
 }
 
 #ifdef VKA_NUKLEAR
-int vka_nuklear_setup(vka_vulkan_t *vulkan)
+int vka_nuklear_set_up(vka_vulkan_t *vulkan)
 {
 	if (!nk_init_default(&(vulkan->nuklear_context), NULL))
 	{
@@ -2776,7 +2744,7 @@ int vka_nuklear_setup(vka_vulkan_t *vulkan)
 	return 0;
 }
 
-void vka_nuklear_shutdown(vka_vulkan_t *vulkan)
+void vka_nuklear_shut_down(vka_vulkan_t *vulkan)
 {
 	vka_destroy_buffer(vulkan, &(vulkan->nuklear_buffer_vertex));
 	vka_destroy_buffer(vulkan, &(vulkan->nuklear_buffer_index));
