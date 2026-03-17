@@ -2313,6 +2313,39 @@ int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t 
 	return 0;
 }
 
+int vka_upload_staging_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
+	vka_buffer_t *staging_buffer, vka_buffer_t *destination_buffer, uint8_t *data)
+{
+	// Check function arguments:
+	if (!command_buffer || !staging_buffer || !destination_buffer || !data)
+	{
+		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
+			"Missing argument for staging buffer upload.");
+		return -1;
+	}
+	if (!staging_buffer->allocation)
+	{
+		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH, "Staging buffer has no allocation.");
+		return -1;
+	}
+	if (!staging_buffer->allocation->mapped_data)
+	{
+		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
+			"Staging allocation has no mapped data.");
+		return -1;
+	}
+
+	// Copy staging buffer to destination (expects size to be size of destination buffer):
+	if (vka_begin_command_buffer(vulkan, command_buffer)) { return -1; }
+	memcpy(staging_buffer->allocation->mapped_data, data, destination_buffer->size);
+	vka_copy_buffer(command_buffer, staging_buffer, destination_buffer);
+	if (vka_end_command_buffer(vulkan, command_buffer)) { return -1; }
+	if (vka_submit_command_buffer(vulkan, command_buffer)) { return -1; }
+	if (vka_wait_for_fence(vulkan, command_buffer)) { return -1; }
+
+	return 0;
+}
+
 void vka_copy_buffer(vka_command_buffer_t *command_buffer,
 	vka_buffer_t *source, vka_buffer_t *destination)
 {
@@ -2367,6 +2400,11 @@ void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffe
 	vkCmdPipelineBarrier(command_buffer->buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
 		VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 		0, 0, NULL, 1, &memory_barrier_2, 0, NULL);
+}
+
+void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer, uint32_t data)
+{
+	vkCmdFillBuffer(command_buffer->buffer, buffer->buffer, 0, VK_WHOLE_SIZE, data);
 }
 
 /*************

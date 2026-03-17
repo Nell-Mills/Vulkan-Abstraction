@@ -45,6 +45,7 @@
 #define VKA_BUFFER_USAGE_STORAGE VK_BUFFER_USAGE_TRANSFER_DST_BIT | \
 				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
 #define VKA_BUFFER_USAGE_STAGING VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+#define VKA_BUFFER_USAGE_SRC_DST VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
 
 // Image usage types:
 #define VKA_IMAGE_USAGE_DEPTH VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | \
@@ -383,9 +384,12 @@ void vka_destroy_buffer(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 int vka_get_buffer_requirements(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t *buffers);
+int vka_upload_staging_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
+	vka_buffer_t *staging_buffer, vka_buffer_t *destination_buffer, uint8_t *data);
 void vka_copy_buffer(vka_command_buffer_t *command_buffer,
 	vka_buffer_t *source, vka_buffer_t *destination);
 void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer);
+void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer, uint32_t data);
 
 // Rendering:
 void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
