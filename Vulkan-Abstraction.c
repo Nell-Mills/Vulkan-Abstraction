@@ -6,6 +6,7 @@
 
 int vka_set_up_vulkan(vka_vulkan_t *vulkan)
 {
+	// TODO - try to enable memory budget extension.
 	if (!strcmp(vulkan->name, "")) { strcpy(vulkan->name, "Vulkan Application"); }
 	if (vulkan->minimum_window_width < 256) { vulkan->minimum_window_width = 256; }
 	if (vulkan->minimum_window_height < 256) { vulkan->minimum_window_height = 256; }
@@ -402,6 +403,14 @@ int vka_create_device(vka_vulkan_t *vulkan)
 	{
 		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH, "Could not retrieve present queue.");
 		return -1;
+	}
+
+	// Get memory heap size information:
+	VkPhysicalDeviceMemoryProperties device_memory_properties;
+	vkGetPhysicalDeviceMemoryProperties(vulkan->physical_device, &device_memory_properties);
+	for (uint32_t i = 0; i < device_memory_properties.memoryHeapCount; i++)
+	{
+		vulkan->heap_sizes[i] = device_memory_properties.memoryHeaps[i].size;
 	}
 
 	return 0;
@@ -2314,7 +2323,7 @@ int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t 
 	// Check all buffers have a size:
 	for (uint32_t i = 0; i < num_buffers; i++)
 	{
-		if (!(buffers[i].size))
+		if (!buffers[i].size)
 		{
 			snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
 				"Buffer \"%s\" has a size of 0.", buffers[i].name);
@@ -2648,55 +2657,78 @@ int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 		return -1;
 	}
 
-	VkMemoryAllocateInfo allocate_info;
-	memset(&allocate_info, 0, sizeof(allocate_info));
-	allocate_info.sType		= VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocate_info.pNext		= NULL;
-	allocate_info.allocationSize	= allocation->requirements.size;
-
 	VkPhysicalDeviceMemoryProperties device_properties;
 	vkGetPhysicalDeviceMemoryProperties(vulkan->physical_device, &device_properties);
-	int found_suitable = 0;
+	int found_type[2] = {0};
+	uint32_t type_index[2];
+	uint32_t heap_index[2];
 	for (uint32_t i = 0; i < device_properties.memoryTypeCount; i++)
 	{
 		if (allocation->requirements.memoryTypeBits & (1 << i))
 		{
-			if ((device_properties.memoryTypes[i].propertyFlags &
-				allocation->properties[0]) == allocation->properties[0])
+			for (int j = 0; j < 2; j++)
 			{
-				// First choice - record and stop here:
-				allocate_info.memoryTypeIndex = i;
-				found_suitable = 1;
-				break;
-			}
-
-			if (!found_suitable && allocation->properties[1] &&
-				((device_properties.memoryTypes[i].propertyFlags &
-				allocation->properties[1]) == allocation->properties[1]))
-			{
-				// Second choice - record but don't stop here:
-				allocate_info.memoryTypeIndex = i;
-				found_suitable = 1;
+				if (!found_type[j] && allocation->properties[j] &&
+					((device_properties.memoryTypes[i].propertyFlags &
+					allocation->properties[j]) == allocation->properties[j]))
+				{
+					type_index[j] = i;
+					heap_index[j] = device_properties.memoryTypes[i].heapIndex;
+					found_type[j] = 1;
+				}
 			}
 		}
+		if (found_type[0] && found_type[1]) { break; }
 	}
 
-	if (!found_suitable)
+	if (!found_type[0] && !found_type[1])
 	{
 		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
 			"Could not find suitable memory type for \"%s\".", allocation->name);
 		return -1;
 	}
 
-	if (vkAllocateMemory(vulkan->device, &allocate_info, NULL,
-			&(allocation->memory)) != VK_SUCCESS)
+	// Try allocating memory for first choice, then second (if applicable):
+	VkMemoryAllocateInfo allocate_info;
+	memset(&allocate_info, 0, sizeof(allocate_info));
+	allocate_info.sType		= VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate_info.pNext		= NULL;
+	allocate_info.allocationSize	= allocation->requirements.size;
+	for (int i = 0; i < 2; i++)
 	{
-		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
-			"Could not allocate memory for \"%s\".", allocation->name);
-		return -1;
+		if (!found_type[i]) { continue; }
+
+		// Query heap usage:
+		VkDeviceSize memory_available;
+		if (vulkan->memory_budget_enabled)
+		{
+			// TODO
+			memory_available = (vulkan->heap_sizes[heap_index[i]] *
+				VKA_HEAP_THRESHOLD) - vulkan->heap_usage[heap_index[i]];
+		}
+		else
+		{
+			memory_available = (vulkan->heap_sizes[heap_index[i]] *
+				VKA_HEAP_THRESHOLD) - vulkan->heap_usage[heap_index[i]];
+		}
+
+		// Allocate memory:
+		if (allocation->requirements.size <= memory_available)
+		{
+			allocate_info.memoryTypeIndex = type_index[i];
+			if (vkAllocateMemory(vulkan->device, &allocate_info, NULL,
+					&(allocation->memory)) == VK_SUCCESS)
+			{
+				allocation->heap_index = heap_index[i];
+				vulkan->heap_usage[heap_index[i]] += allocation->requirements.size;
+				return 0;
+			}
+		}
 	}
 
-	return 0;
+	snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
+		"Could not allocate memory for \"%s\".", allocation->name);
+	return -1;
 }
 
 void vka_destroy_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
@@ -2707,6 +2739,9 @@ void vka_destroy_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 	{
 		vkFreeMemory(vulkan->device, allocation->memory, NULL);
 		allocation->memory = VK_NULL_HANDLE;
+
+		vulkan->heap_usage[allocation->heap_index] -= allocation->requirements.size;
+		allocation->heap_index = 0;
 	}
 
 	memset(&(allocation->requirements), 0, sizeof(allocation->requirements));

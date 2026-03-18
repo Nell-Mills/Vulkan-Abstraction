@@ -32,6 +32,9 @@
 #define VKA_MAX_PATH_LENGTH 256
 #define VKA_MAX_ERROR_LENGTH 1024
 
+// Memory usage threshold (if accurate memory usage statistics aren't available):
+#define VKA_HEAP_THRESHOLD 0.8f
+
 // Shader types (index into pipeline shaders array):
 #define VKA_SHADER_TYPE_VERTEX		0
 #define VKA_SHADER_TYPE_FRAGMENT	1
@@ -192,6 +195,7 @@ typedef struct
 	 *---------------*/
 	VkMemoryRequirements requirements;
 	VkMemoryPropertyFlags properties[2];	// First choice, second choice.
+	uint32_t heap_index;
 	VkDeviceSize map_offset;
 	VkDeviceSize map_size;			// If 0, uses VK_WHOLE_SIZE.
 } vka_allocation_t;
@@ -303,6 +307,16 @@ typedef struct
 	VkPhysicalDeviceVulkan11Features enabled_features_11;
 	VkPhysicalDeviceVulkan12Features enabled_features_12;
 	VkPhysicalDeviceVulkan13Features enabled_features_13;
+
+	/*-------------------*
+	 * Memory Management *
+	 *-------------------*/
+	// Prefer to have VK_EXT_memory_budget enabled:
+	uint8_t memory_budget_enabled;
+
+	// But in case it can't be, fall back on usage estimation:
+	VkDeviceSize heap_sizes[VK_MAX_MEMORY_HEAPS];
+	VkDeviceSize heap_usage[VK_MAX_MEMORY_HEAPS];
 } vka_vulkan_t;
 
 /**************************
