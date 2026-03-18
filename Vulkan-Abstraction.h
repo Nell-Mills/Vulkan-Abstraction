@@ -120,6 +120,12 @@ typedef struct
 
 typedef struct
 {
+	VkShaderStageFlags stage_flags;
+	uint32_t size;
+} vka_push_constant_t;
+
+typedef struct
+{
 	char name[VKA_MAX_NAME_LENGTH];
 	VkPipelineLayout layout;
 	VkPipeline pipeline;
@@ -136,6 +142,10 @@ typedef struct
 
 	uint32_t num_descriptor_sets;
 	vka_descriptor_set_t **descriptor_sets;
+
+	// Push constants:
+	uint32_t num_push_constants;
+	vka_push_constant_t *push_constants;
 
 	// Vertex input:
 	uint32_t num_vertex_bindings;

@@ -1019,6 +1019,28 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 
 	if (!pipeline->layout)
 	{
+		VkPushConstantRange *push_constant_ranges = NULL;
+		if (pipeline->num_push_constants)
+		{
+			push_constant_ranges = malloc(pipeline->num_push_constants *
+						sizeof(VkPushConstantRange));
+			if (!push_constant_ranges)
+			{
+				snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
+					"Could not allocate memory for push constant "
+					"ranges for pipeline \"%s\".", pipeline->name);
+				return -1;
+			}
+
+			for (uint32_t i = 0; i < pipeline->num_push_constants; i++)
+			{
+				push_constant_ranges[i].stageFlags =
+					pipeline->push_constants[i].stage_flags;
+				push_constant_ranges[i].offset = 0;
+				push_constant_ranges[i].size = pipeline->push_constants[i].size;
+			}
+		}
+
 		VkPipelineLayoutCreateInfo pipeline_layout_info;
 		memset(&pipeline_layout_info, 0, sizeof(pipeline_layout_info));
 		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1026,16 +1048,19 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 		pipeline_layout_info.flags			= 0;
 		pipeline_layout_info.setLayoutCount		= pipeline->num_descriptor_sets;
 		pipeline_layout_info.pSetLayouts = pipeline->descriptor_layout_tracker;
-		pipeline_layout_info.pushConstantRangeCount	= 0;
-		pipeline_layout_info.pPushConstantRanges	= NULL;
+		pipeline_layout_info.pushConstantRangeCount	= pipeline->num_push_constants;
+		pipeline_layout_info.pPushConstantRanges	= push_constant_ranges;
 
 		if (vkCreatePipelineLayout(vulkan->device, &pipeline_layout_info,
 					NULL, &(pipeline->layout)) != VK_SUCCESS)
 		{
 			snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
 				"Could not create pipeline layout for \"%s\".", pipeline->name);
+			if (push_constant_ranges) { free(push_constant_ranges); }
 			return -1;
 		}
+
+		if (push_constant_ranges) { free(push_constant_ranges); }
 	}
 
 	// Check for compute pipeline:
@@ -1352,6 +1377,12 @@ void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	{
 		free(pipeline->descriptor_sets);
 		pipeline->descriptor_sets = NULL;
+	}
+
+	if (pipeline->push_constants)
+	{
+		free(pipeline->push_constants);
+		pipeline->push_constants = NULL;
 	}
 
 	if (pipeline->descriptor_set_tracker)
