@@ -122,6 +122,7 @@ typedef struct
 {
 	VkShaderStageFlags stage_flags;
 	uint32_t size;
+	void *data;	// Not managed by push constant struct.
 } vka_push_constant_t;
 
 typedef struct
@@ -428,6 +429,7 @@ void vka_unmap_memory(vka_vulkan_t *vulkan, vka_allocation_t *allocation);
 void vka_device_wait_idle(vka_vulkan_t *vulkan);
 void vka_next_frame(vka_vulkan_t *vulkan);
 int vka_get_next_swapchain_image(vka_vulkan_t *vulkan);
+void vka_push_constants(vka_command_buffer_t *command_buffer, vka_pipeline_t *pipeline);
 
 #ifdef VKA_NUKLEAR
 typedef struct

@@ -2774,6 +2774,16 @@ int vka_get_next_swapchain_image(vka_vulkan_t *vulkan)
 	return 0;
 }
 
+void vka_push_constants(vka_command_buffer_t *command_buffer, vka_pipeline_t *pipeline)
+{
+	for (uint32_t i = 0; i < pipeline->num_push_constants; i++)
+	{
+		vkCmdPushConstants(command_buffer->buffer, pipeline->layout,
+			pipeline->push_constants[i].stage_flags, 0,
+			pipeline->push_constants[i].size, pipeline->push_constants[i].data);
+	}
+}
+
 #ifdef VKA_NUKLEAR
 int vka_nuklear_set_up(vka_vulkan_t *vulkan)
 {
