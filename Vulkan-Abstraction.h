@@ -348,7 +348,7 @@ typedef struct
 	VkImageLayout new_layout;
 	VkPipelineStageFlags src_stage_mask;
 	VkPipelineStageFlags dst_stage_mask;
-} vka_image_info_t;
+} vka_barrier_info_t;
 
 // Main Vulkan base:
 int vka_set_up_vulkan(vka_vulkan_t *vulkan);
@@ -398,10 +398,11 @@ int vka_create_image_view(vka_vulkan_t *vulkan, vka_image_t *image);
 void vka_destroy_image(vka_vulkan_t *vulkan, vka_image_t *image);
 int vka_get_image_requirements(vka_vulkan_t *vulkan, vka_image_t *image);
 int vka_bind_image_memory(vka_vulkan_t *vulkan, vka_image_t *image);
+int vka_set_up_images(vka_vulkan_t *vulkan, uint32_t num_images, vka_image_t *images);
 void vka_copy_image(vka_command_buffer_t *command_buffer,
 	vka_buffer_t *source, vka_image_t *destination);
-void vka_transition_image(vka_command_buffer_t *command_buffer, vka_image_t *image,
-						vka_image_info_t *image_info);
+void vka_image_barrier(vka_command_buffer_t *command_buffer, vka_image_t *image,
+					vka_barrier_info_t *barrier_info);
 
 // Buffers:
 int vka_create_buffer(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
@@ -415,6 +416,8 @@ void vka_copy_buffer(vka_command_buffer_t *command_buffer,
 	vka_buffer_t *source, vka_buffer_t *destination);
 void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer);
 void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer, uint32_t data);
+void vka_buffer_barrier(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer,
+						vka_barrier_info_t *barrier_info);
 
 // Rendering:
 void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
