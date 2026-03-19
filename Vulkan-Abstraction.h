@@ -291,8 +291,7 @@ typedef struct
 	struct nk_buffer nuklear_commands;
 	struct nk_draw_null_texture nuklear_null_texture;
 	vka_allocation_t nuklear_allocation;
-	vka_buffer_t nuklear_buffer_index;
-	vka_buffer_t nuklear_buffer_vertex;
+	vka_buffer_t nuklear_buffers[2 * VKA_MAX_FRAMES_IN_FLIGHT];
 	#endif
 
 	/*---------------*

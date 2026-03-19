@@ -2896,35 +2896,39 @@ int vka_nuklear_set_up(vka_vulkan_t *vulkan)
 	vulkan->nuklear_context.clip.userdata = nk_handle_ptr(NULL);
 	nk_buffer_init_default(&(vulkan->nuklear_commands));
 
-	strcpy(vulkan->nuklear_buffer_index.name, "Nuklear index buffer");
-	vulkan->nuklear_buffer_index.allocation = &(vulkan->nuklear_allocation);
-	vulkan->nuklear_buffer_index.usage = VKA_BUFFER_USAGE_INDEX;
-	vulkan->nuklear_buffer_index.index_type = VK_INDEX_TYPE_UINT16;
-	vulkan->nuklear_buffer_index.size = VKA_NUKLEAR_MAX_INDEX_BUFFER;
-	if (vka_create_buffer(vulkan, &(vulkan->nuklear_buffer_index))) { return -1; }
-	if (vka_get_buffer_requirements(vulkan, &(vulkan->nuklear_buffer_index))) { return -1; }
-
-	strcpy(vulkan->nuklear_buffer_vertex.name, "Nuklear vertex buffer");
-	vulkan->nuklear_buffer_vertex.allocation = &(vulkan->nuklear_allocation);
-	vulkan->nuklear_buffer_vertex.usage = VKA_BUFFER_USAGE_VERTEX;
-	vulkan->nuklear_buffer_vertex.size = VKA_NUKLEAR_MAX_VERTEX_BUFFER;
-	if (vka_create_buffer(vulkan, &(vulkan->nuklear_buffer_vertex))) { return -1; }
-	if (vka_get_buffer_requirements(vulkan, &(vulkan->nuklear_buffer_vertex))) { return -1; }
-
 	strcpy(vulkan->nuklear_allocation.name, "Nuklear allocation");
 	vulkan->nuklear_allocation.properties[0] = VKA_MEMORY_HOST;
-	if (vka_create_allocation(vulkan, &(vulkan->nuklear_allocation))) { return -1; }
+	for (int i = 0; i < VKA_MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		// Index buffer:
+		snprintf(vulkan->nuklear_buffers[i * 2].name, VKA_MAX_NAME_LENGTH,
+						"Nuklear index buffer %d\n", i);
+		vulkan->nuklear_buffers[i * 2].allocation	= &(vulkan->nuklear_allocation);
+		vulkan->nuklear_buffers[i * 2].usage		= VKA_BUFFER_USAGE_INDEX;
+		vulkan->nuklear_buffers[i * 2].index_type	= VK_INDEX_TYPE_UINT16;
+		vulkan->nuklear_buffers[i * 2].size		= VKA_NUKLEAR_MAX_INDEX_BUFFER;
+
+		// Vertex buffer:
+		snprintf(vulkan->nuklear_buffers[(i * 2) + 1].name, VKA_MAX_NAME_LENGTH,
+						"Nuklear vertex buffer %d\n", i);
+		vulkan->nuklear_buffers[(i * 2) + 1].allocation	= &(vulkan->nuklear_allocation);
+		vulkan->nuklear_buffers[(i * 2) + 1].usage	= VKA_BUFFER_USAGE_VERTEX;
+		vulkan->nuklear_buffers[(i * 2) + 1].size	= VKA_NUKLEAR_MAX_VERTEX_BUFFER;
+	}
+
+	uint32_t num_buffers = 2 * VKA_MAX_FRAMES_IN_FLIGHT;
+	if (vka_set_up_buffers(vulkan, num_buffers, vulkan->nuklear_buffers)) { return -1; }
 	if (vka_map_memory(vulkan, &(vulkan->nuklear_allocation))) { return -1; }
-	if (vka_bind_buffer_memory(vulkan, &(vulkan->nuklear_buffer_index))) { return -1; }
-	if (vka_bind_buffer_memory(vulkan, &(vulkan->nuklear_buffer_vertex))) { return -1; }
 
 	return 0;
 }
 
 void vka_nuklear_shut_down(vka_vulkan_t *vulkan)
 {
-	vka_destroy_buffer(vulkan, &(vulkan->nuklear_buffer_vertex));
-	vka_destroy_buffer(vulkan, &(vulkan->nuklear_buffer_index));
+	for (int i = 0; i < (2 * VKA_MAX_FRAMES_IN_FLIGHT); i++)
+	{
+		vka_destroy_buffer(vulkan, &(vulkan->nuklear_buffers[i]));
+	}
 	vka_unmap_memory(vulkan, &(vulkan->nuklear_allocation));
 	vka_destroy_allocation(vulkan, &(vulkan->nuklear_allocation));
 
@@ -2934,7 +2938,6 @@ void vka_nuklear_shut_down(vka_vulkan_t *vulkan)
 
 void vka_nuklear_draw(vka_vulkan_t *vulkan)
 {
-	// FIXME - strange artefacts when resizing window with GUI elements present.
 	// Expects descriptor sets and pipeline bound already.
 	struct nk_convert_config convert_config = {0};
 	static const struct nk_draw_vertex_layout_element vertex_layout[] =
@@ -2955,19 +2958,24 @@ void vka_nuklear_draw(vka_vulkan_t *vulkan)
 	convert_config.shape_AA = NK_ANTI_ALIASING_ON;
 	convert_config.line_AA = NK_ANTI_ALIASING_ON;
 
-	// Put vertex and index data into Vulkan buffers (function arguments are mapped memory):
+	// Put vertex and index data into Vulkan buffers:
 	void *index_data = vulkan->nuklear_allocation.mapped_data;
-	void *vertex_data = index_data + vulkan->nuklear_buffer_vertex.offset;
+	index_data += vulkan->nuklear_buffers[vulkan->current_frame * 2].offset;
+	void *vertex_data = vulkan->nuklear_allocation.mapped_data;
+	vertex_data += vulkan->nuklear_buffers[(vulkan->current_frame * 2) + 1].offset;
+
 	struct nk_buffer nuklear_index_buffer;
 	struct nk_buffer nuklear_vertex_buffer;
 	nk_buffer_init_fixed(&nuklear_index_buffer, index_data, VKA_NUKLEAR_MAX_INDEX_BUFFER);
 	nk_buffer_init_fixed(&nuklear_vertex_buffer, vertex_data, VKA_NUKLEAR_MAX_VERTEX_BUFFER);
+
 	nk_convert(&(vulkan->nuklear_context), &(vulkan->nuklear_commands), &nuklear_vertex_buffer,
 							&nuklear_index_buffer, &convert_config);
 
 	// Bind index/vertex buffers:
 	vka_bind_vertex_buffers(&(vulkan->command_buffers[vulkan->current_frame]),
-		&(vulkan->nuklear_buffer_index), 1, &(vulkan->nuklear_buffer_vertex));
+		&(vulkan->nuklear_buffers[vulkan->current_frame * 2]), 1,
+		&(vulkan->nuklear_buffers[(vulkan->current_frame * 2) + 1]));
 
 	// Draw GUI elements:
 	uint32_t index_offset = 0;
