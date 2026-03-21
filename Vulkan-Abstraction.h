@@ -307,6 +307,10 @@ typedef struct
 	VkPhysicalDeviceVulkan12Features enabled_features_12;
 	VkPhysicalDeviceVulkan13Features enabled_features_13;
 
+	// Device properties:
+	VkPhysicalDeviceMaintenance3Properties maintenance_properties;
+	VkPhysicalDeviceProperties2 device_properties;
+
 	/*-------------------*
 	 * Memory Management *
 	 *-------------------*/

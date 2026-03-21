@@ -20,6 +20,13 @@ int vka_set_up_vulkan(vka_vulkan_t *vulkan)
 	vulkan->enabled_features_13.pNext = &(vulkan->enabled_features_12);
 	vulkan->enabled_features_13.dynamicRendering = VK_TRUE;
 
+	vulkan->maintenance_properties.sType =
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES;
+	vulkan->maintenance_properties.pNext = NULL;
+
+	vulkan->device_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+	vulkan->device_properties.pNext = &(vulkan->maintenance_properties);
+
 	vulkan->graphics_family_index = 100;
 	vulkan->present_family_index = 100;
 	vulkan->swapchain_format = VK_FORMAT_UNDEFINED;
@@ -318,6 +325,8 @@ int vka_create_device(vka_vulkan_t *vulkan)
 		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH, "No suitable physical device found.");
 		return -1;
 	}
+
+	vkGetPhysicalDeviceProperties2(vulkan->physical_device, &(vulkan->device_properties));
 
 	uint32_t num_queue_families;
 	if (vulkan->graphics_family_index == vulkan->present_family_index)
