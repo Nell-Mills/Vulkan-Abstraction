@@ -1391,18 +1391,6 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 
 void vka_destroy_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 {
-	if (pipeline->descriptor_sets)
-	{
-		free(pipeline->descriptor_sets);
-		pipeline->descriptor_sets = NULL;
-	}
-
-	if (pipeline->push_constants)
-	{
-		free(pipeline->push_constants);
-		pipeline->push_constants = NULL;
-	}
-
 	if (pipeline->descriptor_set_tracker)
 	{
 		free(pipeline->descriptor_set_tracker);
@@ -2442,10 +2430,14 @@ int vka_upload_staging_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *comman
 		return -1;
 	}
 
+	vka_copy_info_t copy_info = {0};
+	copy_info.source = staging_buffer;
+	copy_info.destination = destination_buffer;
+
 	// Copy staging buffer to destination (expects size to be size of destination buffer):
 	if (vka_begin_command_buffer(vulkan, command_buffer)) { return -1; }
 	memcpy(staging_buffer->allocation->mapped_data, data, destination_buffer->size);
-	vka_copy_buffer(command_buffer, staging_buffer, destination_buffer);
+	vka_copy_buffer(command_buffer, &copy_info);
 	if (vka_end_command_buffer(vulkan, command_buffer)) { return -1; }
 	if (vka_submit_command_buffer(vulkan, command_buffer)) { return -1; }
 	if (vka_wait_for_fence(vulkan, command_buffer)) { return -1; }
@@ -2453,20 +2445,24 @@ int vka_upload_staging_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *comman
 	return 0;
 }
 
-void vka_copy_buffer(vka_command_buffer_t *command_buffer,
-	vka_buffer_t *source, vka_buffer_t *destination)
+void vka_copy_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
 {
-	// Choose size based on which buffer is smaller:
-	VkDeviceSize copy_size = source->size;
-	if (destination->size < source->size) { copy_size = destination->size; }
+	// If no size given, choose size based on which buffer is smaller:
+	VkDeviceSize copy_size = copy_info->size;
+	if (!copy_size)
+	{
+		copy_size = copy_info->destination->size;
+		if (copy_info->source->size < copy_size) { copy_size = copy_info->source->size; }
+	}
 
-	VkBufferCopy copy_info;
-	memset(&copy_info, 0, sizeof(copy_info));
-	copy_info.srcOffset	= 0;
-	copy_info.dstOffset	= 0;
-	copy_info.size		= copy_size;
+	VkBufferCopy buffer_copy_info;
+	memset(&buffer_copy_info, 0, sizeof(buffer_copy_info));
+	buffer_copy_info.srcOffset	= copy_info->source_offset;
+	buffer_copy_info.dstOffset	= copy_info->destination_offset;
+	buffer_copy_info.size		= copy_size;
 
-	vkCmdCopyBuffer(command_buffer->buffer, source->buffer, destination->buffer, 1, &copy_info);
+	vkCmdCopyBuffer(command_buffer->buffer, copy_info->source->buffer,
+		copy_info->destination->buffer, 1, &buffer_copy_info);
 }
 
 void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer)
@@ -2495,9 +2491,13 @@ void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffe
 	vka_buffer_barrier(command_buffer, buffer, &barrier_info);
 }
 
-void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer, uint32_t data)
+void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
 {
-	vkCmdFillBuffer(command_buffer->buffer, buffer->buffer, 0, VK_WHOLE_SIZE, data);
+	// Uses source buffer and offset in copy_info.
+	VkDeviceSize size = copy_info->size;
+	if (!size) { size = VK_WHOLE_SIZE; }
+	vkCmdFillBuffer(command_buffer->buffer, copy_info->source->buffer,
+			copy_info->source_offset, size, copy_info->data);
 }
 
 void vka_buffer_barrier(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer,
@@ -2512,8 +2512,10 @@ void vka_buffer_barrier(vka_command_buffer_t *command_buffer, vka_buffer_t *buff
 	buffer_barrier.srcQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
 	buffer_barrier.dstQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
 	buffer_barrier.buffer			= buffer->buffer;
-	buffer_barrier.offset			= 0;
-	buffer_barrier.size			= VK_WHOLE_SIZE;
+	buffer_barrier.offset			= barrier_info->offset;
+
+	if (!barrier_info->size) { buffer_barrier.size = VK_WHOLE_SIZE; }
+	else { buffer_barrier.size = barrier_info->size; }
 
 	vkCmdPipelineBarrier(command_buffer->buffer, barrier_info->src_stage_mask,
 		barrier_info->dst_stage_mask, 0, 0, NULL, 1, &buffer_barrier, 0, NULL);

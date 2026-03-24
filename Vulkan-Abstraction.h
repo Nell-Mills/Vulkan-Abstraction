@@ -26,11 +26,34 @@
 #define VKA_API_VERSION_MAJOR 1
 #define VKA_API_VERSION_MINOR 3
 
-#define VKA_MAX_FRAMES_IN_FLIGHT 2
-#define VKA_MAX_VERTEX_ATTRIBUTES 4
+// Array lengths (can be overridden when compiling):
+#ifndef VKA_MAX_NAME_LENGTH
 #define VKA_MAX_NAME_LENGTH 64
+#endif
+
+#ifndef VKA_MAX_PATH_LENGTH
 #define VKA_MAX_PATH_LENGTH 256
+#endif
+
+#ifndef VKA_MAX_ERROR_LENGTH
 #define VKA_MAX_ERROR_LENGTH 1024
+#endif
+
+#ifndef VKA_MAX_FRAMES_IN_FLIGHT
+#define VKA_MAX_FRAMES_IN_FLIGHT 2
+#endif
+
+#ifndef VKA_MAX_VERTEX_ATTRIBUTES
+#define VKA_MAX_VERTEX_ATTRIBUTES 4
+#endif
+
+#ifndef VKA_MAX_PIPELINE_DESCRIPTOR_SETS
+#define VKA_MAX_PIPELINE_DESCRIPTOR_SETS 8
+#endif
+
+#ifndef VKA_MAX_PIPELINE_PUSH_CONSTANTS
+#define VKA_MAX_PIPELINE_PUSH_CONSTANTS 2
+#endif
 
 // Memory usage threshold (if accurate memory usage statistics aren't available):
 #define VKA_HEAP_THRESHOLD 0.8f
@@ -161,11 +184,11 @@ typedef struct
 	int is_compute_pipeline;
 
 	uint32_t num_descriptor_sets;
-	vka_descriptor_set_t **descriptor_sets;
+	vka_descriptor_set_t *descriptor_sets[VKA_MAX_PIPELINE_DESCRIPTOR_SETS];
 
 	// Push constants:
 	uint32_t num_push_constants;
-	vka_push_constant_t *push_constants;
+	vka_push_constant_t push_constants[VKA_MAX_PIPELINE_PUSH_CONSTANTS];
 
 	// Vertex input:
 	uint32_t num_vertex_bindings;
@@ -367,7 +390,23 @@ typedef struct
 	VkImageLayout new_layout;
 	VkPipelineStageFlags src_stage_mask;
 	VkPipelineStageFlags dst_stage_mask;
+	VkDeviceSize offset;
+	VkDeviceSize size;	// If 0, uses VK_WHOLE_SIZE.
 } vka_barrier_info_t;
+
+typedef struct
+{
+	vka_buffer_t *source;
+	vka_buffer_t *destination;
+	VkDeviceSize source_offset;
+	VkDeviceSize destination_offset;
+	VkDeviceSize size;	// If 0, uses smaller buffer size.
+	uint32_t data;		// For vkCmdFillBuffer().
+} vka_copy_info_t;
+
+/*************
+ * Functions *
+ *************/
 
 // Main Vulkan base:
 int vka_set_up_vulkan(vka_vulkan_t *vulkan);
@@ -431,10 +470,9 @@ int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t *buffers);
 int vka_upload_staging_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
 	vka_buffer_t *staging_buffer, vka_buffer_t *destination_buffer, uint8_t *data);
-void vka_copy_buffer(vka_command_buffer_t *command_buffer,
-	vka_buffer_t *source, vka_buffer_t *destination);
+void vka_copy_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info);
 void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer);
-void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer, uint32_t data);
+void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info);
 void vka_buffer_barrier(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer,
 						vka_barrier_info_t *barrier_info);
 
@@ -467,6 +505,10 @@ void vka_next_frame(vka_vulkan_t *vulkan);
 int vka_get_next_swapchain_image(vka_vulkan_t *vulkan);
 void vka_push_constants(vka_command_buffer_t *command_buffer, vka_pipeline_t *pipeline);
 
+/***********
+ * Nuklear *
+ ***********/
+
 #ifdef VKA_NUKLEAR
 typedef struct
 {
@@ -483,6 +525,10 @@ void vka_nuklear_process_grab(vka_vulkan_t *vulkan);
 void vka_nuklear_clipboard_copy(nk_handle usr, const char *text, int len);
 void vka_nuklear_clipboard_paste(nk_handle usr, struct nk_text_edit *edit);
 #endif
+
+/*******************
+ * Debug functions *
+ *******************/
 
 #ifdef VKA_DEBUG
 int vka_check_instance_layer_extension_support(vka_vulkan_t *vulkan);
