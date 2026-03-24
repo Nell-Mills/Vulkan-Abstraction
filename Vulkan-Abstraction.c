@@ -2121,6 +2121,74 @@ int vka_bind_image_memory(vka_vulkan_t *vulkan, vka_image_t *image)
 	return 0;
 }
 
+void vka_image_barrier(vka_command_buffer_t *command_buffer, vka_barrier_info_t *barrier_info)
+{
+	vka_image_t *image = (vka_image_t *)(barrier_info->resource);
+
+	VkImageMemoryBarrier image_barrier;
+	memset(&image_barrier, 0, sizeof(image_barrier));
+	image_barrier.sType				= VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	image_barrier.pNext				= NULL;
+	image_barrier.srcAccessMask			= barrier_info->src_access_mask;
+	image_barrier.dstAccessMask			= barrier_info->dst_access_mask;
+	image_barrier.oldLayout				= barrier_info->old_layout;
+	image_barrier.newLayout				= barrier_info->new_layout;
+	image_barrier.srcQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
+	image_barrier.dstQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
+	image_barrier.image				= image->image;
+	image_barrier.subresourceRange.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT;
+	image_barrier.subresourceRange.baseMipLevel	= 0;
+	image_barrier.subresourceRange.levelCount	= image->mip_levels;
+	image_barrier.subresourceRange.baseArrayLayer	= 0;
+	image_barrier.subresourceRange.layerCount	= 1;
+
+	vkCmdPipelineBarrier(command_buffer->buffer, barrier_info->src_stage_mask,
+		barrier_info->dst_stage_mask, 0, 0, NULL, 0, NULL, 1, &image_barrier);
+}
+
+void vka_copy_buffer_to_image(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
+{
+	vka_buffer_t *source = (vka_buffer_t *)(copy_info->source);
+	vka_image_t *destination = (vka_image_t *)(copy_info->destination);
+
+	vka_barrier_info_t barrier_info = {0};
+	barrier_info.resource		= destination;
+	barrier_info.src_access_mask	= VK_ACCESS_NONE;
+	barrier_info.dst_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier_info.old_layout		= VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier_info.new_layout		= VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
+	vka_image_barrier(command_buffer, &barrier_info);
+
+	VkBufferImageCopy image_copy;
+	memset(&image_copy, 0, sizeof(VkBufferImageCopy));
+	image_copy.bufferOffset				= 0;
+	image_copy.bufferRowLength			= 0;
+	image_copy.bufferImageHeight			= 0;
+	image_copy.imageSubresource.aspectMask		= destination->aspect_mask;
+	image_copy.imageSubresource.mipLevel		= 0;
+	image_copy.imageSubresource.baseArrayLayer	= 0;
+	image_copy.imageSubresource.layerCount		= 1;
+	image_copy.imageOffset.x			= 0;
+	image_copy.imageOffset.y			= 0;
+	image_copy.imageOffset.z			= 0;
+	image_copy.imageExtent.width			= destination->width;
+	image_copy.imageExtent.height			= destination->height;
+	image_copy.imageExtent.depth			= 1;
+
+	vkCmdCopyBufferToImage(command_buffer->buffer, source->buffer, destination->image,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy);
+
+	barrier_info.src_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier_info.dst_access_mask	= VK_ACCESS_SHADER_READ_BIT;
+	barrier_info.old_layout		= VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier_info.new_layout		= VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
+	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	vka_image_barrier(command_buffer, &barrier_info);
+}
+
 int vka_set_up_images(vka_vulkan_t *vulkan, uint32_t num_images, vka_image_t *images)
 {
 	/* Convenience function to set up multiple images.
@@ -2177,73 +2245,6 @@ int vka_set_up_images(vka_vulkan_t *vulkan, uint32_t num_images, vka_image_t *im
 	}
 
 	return 0;
-}
-
-void vka_copy_image(vka_command_buffer_t *command_buffer,
-	vka_buffer_t *source, vka_image_t *destination)
-{
-	vka_barrier_info_t barrier_info = {0};
-	barrier_info.src_access_mask	= VK_ACCESS_NONE;
-	barrier_info.dst_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier_info.old_layout		= VK_IMAGE_LAYOUT_UNDEFINED;
-	barrier_info.new_layout		= VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
-
-	vka_image_barrier(command_buffer, destination, &barrier_info);
-
-	// Copy staging buffer to image:
-	VkBufferImageCopy image_copy;
-	memset(&image_copy, 0, sizeof(VkBufferImageCopy));
-	image_copy.bufferOffset				= 0;
-	image_copy.bufferRowLength			= 0;
-	image_copy.bufferImageHeight			= 0;
-	image_copy.imageSubresource.aspectMask		= destination->aspect_mask;
-	image_copy.imageSubresource.mipLevel		= 0;
-	image_copy.imageSubresource.baseArrayLayer	= 0;
-	image_copy.imageSubresource.layerCount		= 1;
-	image_copy.imageOffset.x			= 0;
-	image_copy.imageOffset.y			= 0;
-	image_copy.imageOffset.z			= 0;
-	image_copy.imageExtent.width			= destination->width;
-	image_copy.imageExtent.height			= destination->height;
-	image_copy.imageExtent.depth			= 1;
-
-	vkCmdCopyBufferToImage(command_buffer->buffer, source->buffer, destination->image,
-				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy);
-
-	barrier_info.src_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier_info.dst_access_mask	= VK_ACCESS_SHADER_READ_BIT;
-	barrier_info.old_layout		= VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	barrier_info.new_layout		= VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
-	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-
-	vka_image_barrier(command_buffer, destination, &barrier_info);
-}
-
-void vka_image_barrier(vka_command_buffer_t *command_buffer, vka_image_t *image,
-					vka_barrier_info_t *barrier_info)
-{
-	VkImageMemoryBarrier image_barrier;
-	memset(&image_barrier, 0, sizeof(image_barrier));
-	image_barrier.sType				= VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	image_barrier.pNext				= NULL;
-	image_barrier.srcAccessMask			= barrier_info->src_access_mask;
-	image_barrier.dstAccessMask			= barrier_info->dst_access_mask;
-	image_barrier.oldLayout				= barrier_info->old_layout;
-	image_barrier.newLayout				= barrier_info->new_layout;
-	image_barrier.srcQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
-	image_barrier.dstQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
-	image_barrier.image				= image->image;
-	image_barrier.subresourceRange.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT;
-	image_barrier.subresourceRange.baseMipLevel	= 0;
-	image_barrier.subresourceRange.levelCount	= image->mip_levels;
-	image_barrier.subresourceRange.baseArrayLayer	= 0;
-	image_barrier.subresourceRange.layerCount	= 1;
-
-	vkCmdPipelineBarrier(command_buffer->buffer, barrier_info->src_stage_mask,
-		barrier_info->dst_stage_mask, 0, 0, NULL, 0, NULL, 1, &image_barrier);
 }
 
 /***********
@@ -2351,6 +2352,86 @@ int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer)
 	return 0;
 }
 
+void vka_buffer_barrier(vka_command_buffer_t *command_buffer, vka_barrier_info_t *barrier_info)
+{
+	vka_buffer_t *buffer = (vka_buffer_t *)(barrier_info->resource);
+
+	VkBufferMemoryBarrier buffer_barrier;
+	memset(&buffer_barrier, 0, sizeof(buffer_barrier));
+	buffer_barrier.sType			= VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	buffer_barrier.pNext			= NULL;
+	buffer_barrier.srcAccessMask		= barrier_info->src_access_mask;
+	buffer_barrier.dstAccessMask		= barrier_info->dst_access_mask;
+	buffer_barrier.srcQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
+	buffer_barrier.dstQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
+	buffer_barrier.buffer			= buffer->buffer;
+	buffer_barrier.offset			= barrier_info->offset;
+
+	if (!barrier_info->size) { buffer_barrier.size = VK_WHOLE_SIZE; }
+	else { buffer_barrier.size = barrier_info->size; }
+
+	vkCmdPipelineBarrier(command_buffer->buffer, barrier_info->src_stage_mask,
+		barrier_info->dst_stage_mask, 0, 0, NULL, 1, &buffer_barrier, 0, NULL);
+}
+
+void vka_copy_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
+{
+	vka_buffer_t *source = (vka_buffer_t *)(copy_info->source);
+	vka_buffer_t *destination = (vka_buffer_t *)(copy_info->destination);
+
+	// If no size given, choose size based on which buffer is smaller:
+	VkDeviceSize copy_size = copy_info->size;
+	if (!copy_size)
+	{
+		copy_size = destination->size;
+		if (source->size < copy_size) { copy_size = source->size; }
+	}
+
+	VkBufferCopy buffer_copy_info;
+	memset(&buffer_copy_info, 0, sizeof(buffer_copy_info));
+	buffer_copy_info.srcOffset	= copy_info->source_offset;
+	buffer_copy_info.dstOffset	= copy_info->destination_offset;
+	buffer_copy_info.size		= copy_size;
+
+	vkCmdCopyBuffer(command_buffer->buffer, source->buffer,
+		destination->buffer, 1, &buffer_copy_info);
+}
+
+void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer)
+{
+	/* Note - this is intended for scene uniforms, with size <= 65536.
+	 * Buffer's void *data member is used for the update. */
+	vka_barrier_info_t barrier_info = {0};
+	barrier_info.resource		= buffer;
+	barrier_info.src_access_mask	= VK_ACCESS_UNIFORM_READ_BIT;
+	barrier_info.dst_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+					VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
+	vka_buffer_barrier(command_buffer, &barrier_info);
+
+	vkCmdUpdateBuffer(command_buffer->buffer, buffer->buffer, 0, buffer->size, buffer->data);
+
+	barrier_info.src_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier_info.dst_access_mask	= VK_ACCESS_UNIFORM_READ_BIT;
+	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
+	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+					VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+	vka_buffer_barrier(command_buffer, &barrier_info);
+}
+
+void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
+{
+	// Uses destination buffer and offset in copy_info.
+	vka_buffer_t *destination = (vka_buffer_t *)(copy_info->destination);
+	VkDeviceSize size = copy_info->size;
+	if (!size) { size = VK_WHOLE_SIZE; }
+	vkCmdFillBuffer(command_buffer->buffer, destination->buffer,
+		copy_info->destination_offset, size, copy_info->data);
+}
+
 int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t *buffers)
 {
 	/* Convenience function to set up multiple buffers.
@@ -2408,119 +2489,6 @@ int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t 
 	return 0;
 }
 
-int vka_upload_staging_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer,
-	vka_buffer_t *staging_buffer, vka_buffer_t *destination_buffer, uint8_t *data)
-{
-	// Check function arguments:
-	if (!command_buffer || !staging_buffer || !destination_buffer || !data)
-	{
-		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
-			"Missing argument for staging buffer upload.");
-		return -1;
-	}
-	if (!staging_buffer->allocation)
-	{
-		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH, "Staging buffer has no allocation.");
-		return -1;
-	}
-	if (!staging_buffer->allocation->mapped_data)
-	{
-		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
-			"Staging allocation has no mapped data.");
-		return -1;
-	}
-
-	vka_copy_info_t copy_info = {0};
-	copy_info.source = staging_buffer;
-	copy_info.destination = destination_buffer;
-
-	// Copy staging buffer to destination (expects size to be size of destination buffer):
-	if (vka_begin_command_buffer(vulkan, command_buffer)) { return -1; }
-	memcpy(staging_buffer->allocation->mapped_data, data, destination_buffer->size);
-	vka_copy_buffer(command_buffer, &copy_info);
-	if (vka_end_command_buffer(vulkan, command_buffer)) { return -1; }
-	if (vka_submit_command_buffer(vulkan, command_buffer)) { return -1; }
-	if (vka_wait_for_fence(vulkan, command_buffer)) { return -1; }
-
-	return 0;
-}
-
-void vka_copy_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
-{
-	// If no size given, choose size based on which buffer is smaller:
-	VkDeviceSize copy_size = copy_info->size;
-	if (!copy_size)
-	{
-		copy_size = copy_info->destination->size;
-		if (copy_info->source->size < copy_size) { copy_size = copy_info->source->size; }
-	}
-
-	VkBufferCopy buffer_copy_info;
-	memset(&buffer_copy_info, 0, sizeof(buffer_copy_info));
-	buffer_copy_info.srcOffset	= copy_info->source_offset;
-	buffer_copy_info.dstOffset	= copy_info->destination_offset;
-	buffer_copy_info.size		= copy_size;
-
-	vkCmdCopyBuffer(command_buffer->buffer, copy_info->source->buffer,
-		copy_info->destination->buffer, 1, &buffer_copy_info);
-}
-
-void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer)
-{
-	/* Note - this is intended for scene uniforms, with size <= 65536.
-	 * Buffer's void *data member is used for the update. */
-	vka_barrier_info_t barrier_info = {0};
-	barrier_info.src_access_mask	= VK_ACCESS_UNIFORM_READ_BIT;
-	barrier_info.dst_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-					VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
-
-	vka_buffer_barrier(command_buffer, buffer, &barrier_info);
-
-	vkCmdUpdateBuffer(command_buffer->buffer, buffer->buffer, 0, buffer->size, buffer->data);
-
-	barrier_info.src_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier_info.dst_access_mask	= VK_ACCESS_UNIFORM_READ_BIT;
-	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
-	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-					VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-
-	vka_buffer_barrier(command_buffer, buffer, &barrier_info);
-}
-
-void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
-{
-	// Uses source buffer and offset in copy_info.
-	VkDeviceSize size = copy_info->size;
-	if (!size) { size = VK_WHOLE_SIZE; }
-	vkCmdFillBuffer(command_buffer->buffer, copy_info->source->buffer,
-			copy_info->source_offset, size, copy_info->data);
-}
-
-void vka_buffer_barrier(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer,
-						vka_barrier_info_t *barrier_info)
-{
-	VkBufferMemoryBarrier buffer_barrier;
-	memset(&buffer_barrier, 0, sizeof(buffer_barrier));
-	buffer_barrier.sType			= VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-	buffer_barrier.pNext			= NULL;
-	buffer_barrier.srcAccessMask		= barrier_info->src_access_mask;
-	buffer_barrier.dstAccessMask		= barrier_info->dst_access_mask;
-	buffer_barrier.srcQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
-	buffer_barrier.dstQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
-	buffer_barrier.buffer			= buffer->buffer;
-	buffer_barrier.offset			= barrier_info->offset;
-
-	if (!barrier_info->size) { buffer_barrier.size = VK_WHOLE_SIZE; }
-	else { buffer_barrier.size = barrier_info->size; }
-
-	vkCmdPipelineBarrier(command_buffer->buffer, barrier_info->src_stage_mask,
-		barrier_info->dst_stage_mask, 0, 0, NULL, 1, &buffer_barrier, 0, NULL);
-}
-
 /*************
  * Rendering *
  *************/
@@ -2528,14 +2496,14 @@ void vka_buffer_barrier(vka_command_buffer_t *command_buffer, vka_buffer_t *buff
 void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
 {
 	vka_barrier_info_t barrier_info = {0};
+	barrier_info.resource		= render_info->colour_image;
 	barrier_info.src_access_mask	= VK_ACCESS_NONE;
 	barrier_info.dst_access_mask	= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	barrier_info.old_layout		= VK_IMAGE_LAYOUT_UNDEFINED;
 	barrier_info.new_layout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-	vka_image_barrier(command_buffer, render_info->colour_image, &barrier_info);
+	vka_image_barrier(command_buffer, &barrier_info);
 
 	VkRenderingAttachmentInfo colour_info;
 	memset(&colour_info, 0, sizeof(colour_info));
@@ -2590,14 +2558,14 @@ void vka_end_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *
 	vkCmdEndRendering(command_buffer->buffer);
 
 	vka_barrier_info_t barrier_info = {0};
+	barrier_info.resource		= render_info->colour_image;
 	barrier_info.src_access_mask	= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	barrier_info.dst_access_mask	= VK_ACCESS_NONE;
 	barrier_info.old_layout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	barrier_info.new_layout		= VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-
-	vka_image_barrier(command_buffer, render_info->colour_image, &barrier_info);
+	vka_image_barrier(command_buffer, &barrier_info);
 }
 
 void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
