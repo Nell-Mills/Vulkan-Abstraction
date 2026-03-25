@@ -2636,6 +2636,20 @@ void vka_draw_indexed(vka_command_buffer_t *command_buffer, uint32_t num_indices
 	vkCmdDrawIndexed(command_buffer->buffer, num_indices, 1, index_offset, vertex_offset, 0);
 }
 
+void vka_draw_indirect(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
+								uint32_t draw_count)
+{
+	vkCmdDrawIndirect(command_buffer->buffer, draw_commands->buffer, 0, draw_count,
+							sizeof(VkDrawIndirectCommand));
+}
+
+void vka_draw_indexed_indirect(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
+									uint32_t draw_count)
+{
+	vkCmdDrawIndexedIndirect(command_buffer->buffer, draw_commands->buffer, 0, draw_count,
+							sizeof(VkDrawIndexedIndirectCommand));
+}
+
 int vka_present_image(vka_vulkan_t *vulkan)
 {
 	VkPresentInfoKHR present_info;

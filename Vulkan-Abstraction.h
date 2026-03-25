@@ -484,6 +484,10 @@ void vka_bind_descriptor_sets(vka_command_buffer_t *command_buffer, vka_pipeline
 void vka_draw(vka_command_buffer_t *command_buffer, uint32_t num_vertices, int32_t vertex_offset);
 void vka_draw_indexed(vka_command_buffer_t *command_buffer, uint32_t num_indices,
 				uint32_t index_offset, int32_t vertex_offset);
+void vka_draw_indirect(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
+								uint32_t draw_count);
+void vka_draw_indexed_indirect(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
+									uint32_t draw_count);
 int vka_present_image(vka_vulkan_t *vulkan);
 
 // Compute:
