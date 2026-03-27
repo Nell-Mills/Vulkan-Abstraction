@@ -2374,6 +2374,30 @@ void vka_buffer_barrier(vka_command_buffer_t *command_buffer, vka_barrier_info_t
 		barrier_info->dst_stage_mask, 0, 0, NULL, 1, &buffer_barrier, 0, NULL);
 }
 
+void vka_buffer_barrier_reverse(vka_command_buffer_t *command_buffer,
+				vka_barrier_info_t *barrier_info)
+{
+	// Same as previous function but with source and destination swapped for convenience.
+	vka_buffer_t *buffer = (vka_buffer_t *)(barrier_info->resource);
+
+	VkBufferMemoryBarrier buffer_barrier;
+	memset(&buffer_barrier, 0, sizeof(buffer_barrier));
+	buffer_barrier.sType			= VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	buffer_barrier.pNext			= NULL;
+	buffer_barrier.srcAccessMask		= barrier_info->dst_access_mask;
+	buffer_barrier.dstAccessMask		= barrier_info->src_access_mask;
+	buffer_barrier.srcQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
+	buffer_barrier.dstQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
+	buffer_barrier.buffer			= buffer->buffer;
+	buffer_barrier.offset			= barrier_info->offset;
+
+	if (!barrier_info->size) { buffer_barrier.size = VK_WHOLE_SIZE; }
+	else { buffer_barrier.size = barrier_info->size; }
+
+	vkCmdPipelineBarrier(command_buffer->buffer, barrier_info->dst_stage_mask,
+		barrier_info->src_stage_mask, 0, 0, NULL, 1, &buffer_barrier, 0, NULL);
+}
+
 void vka_copy_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
 {
 	vka_buffer_t *source = (vka_buffer_t *)(copy_info->source);
@@ -2648,6 +2672,20 @@ void vka_draw_indexed_indirect(vka_command_buffer_t *command_buffer, vka_buffer_
 {
 	vkCmdDrawIndexedIndirect(command_buffer->buffer, draw_commands->buffer, 0, draw_count,
 							sizeof(VkDrawIndexedIndirectCommand));
+}
+
+void vka_draw_indirect_count(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
+					vka_buffer_t *draw_counts, uint32_t max_draw_count)
+{
+	vkCmdDrawIndirectCount(command_buffer->buffer, draw_commands->buffer, 0,
+		draw_counts->buffer, 0, max_draw_count, sizeof(VkDrawIndirectCommand));
+}
+
+void vka_draw_indexed_indirect_count(vka_command_buffer_t *command_buffer,
+	vka_buffer_t *draw_commands, vka_buffer_t *draw_counts, uint32_t max_draw_count)
+{
+	vkCmdDrawIndexedIndirectCount(command_buffer->buffer, draw_commands->buffer, 0,
+		draw_counts->buffer, 0, max_draw_count, sizeof(VkDrawIndexedIndirectCommand));
 }
 
 int vka_present_image(vka_vulkan_t *vulkan)

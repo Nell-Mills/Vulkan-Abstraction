@@ -468,6 +468,8 @@ void vka_destroy_buffer(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 int vka_get_buffer_requirements(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 int vka_bind_buffer_memory(vka_vulkan_t *vulkan, vka_buffer_t *buffer);
 void vka_buffer_barrier(vka_command_buffer_t *command_buffer, vka_barrier_info_t *barrier_info);
+void vka_buffer_barrier_reverse(vka_command_buffer_t *command_buffer,
+				vka_barrier_info_t *barrier_info);
 void vka_copy_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info);
 void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer);
 void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info);
@@ -488,6 +490,10 @@ void vka_draw_indirect(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_
 								uint32_t draw_count);
 void vka_draw_indexed_indirect(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
 									uint32_t draw_count);
+void vka_draw_indirect_count(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
+					vka_buffer_t *draw_counts, uint32_t max_draw_count);
+void vka_draw_indexed_indirect_count(vka_command_buffer_t *command_buffer,
+	vka_buffer_t *draw_commands, vka_buffer_t *draw_counts, uint32_t max_draw_count);
 int vka_present_image(vka_vulkan_t *vulkan);
 
 // Compute:
