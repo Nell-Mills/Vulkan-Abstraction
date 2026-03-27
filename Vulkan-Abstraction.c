@@ -2661,17 +2661,17 @@ void vka_draw_indexed(vka_command_buffer_t *command_buffer, uint32_t num_indices
 }
 
 void vka_draw_indirect(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
-								uint32_t draw_count)
+					VkDeviceSize draw_offset, uint32_t draw_count)
 {
-	vkCmdDrawIndirect(command_buffer->buffer, draw_commands->buffer, 0, draw_count,
-							sizeof(VkDrawIndirectCommand));
+	vkCmdDrawIndirect(command_buffer->buffer, draw_commands->buffer, draw_offset, draw_count,
+								sizeof(VkDrawIndirectCommand));
 }
 
 void vka_draw_indexed_indirect(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
-									uint32_t draw_count)
+						VkDeviceSize draw_offset, uint32_t draw_count)
 {
-	vkCmdDrawIndexedIndirect(command_buffer->buffer, draw_commands->buffer, 0, draw_count,
-							sizeof(VkDrawIndexedIndirectCommand));
+	vkCmdDrawIndexedIndirect(command_buffer->buffer, draw_commands->buffer, draw_offset,
+					draw_count, sizeof(VkDrawIndexedIndirectCommand));
 }
 
 void vka_draw_indirect_count(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,

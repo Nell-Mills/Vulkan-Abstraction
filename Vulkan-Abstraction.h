@@ -487,9 +487,9 @@ void vka_draw(vka_command_buffer_t *command_buffer, uint32_t num_vertices, int32
 void vka_draw_indexed(vka_command_buffer_t *command_buffer, uint32_t num_indices,
 				uint32_t index_offset, int32_t vertex_offset);
 void vka_draw_indirect(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
-								uint32_t draw_count);
+					VkDeviceSize draw_offset, uint32_t draw_count);
 void vka_draw_indexed_indirect(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
-									uint32_t draw_count);
+						VkDeviceSize draw_offset, uint32_t draw_count);
 void vka_draw_indirect_count(vka_command_buffer_t *command_buffer, vka_buffer_t *draw_commands,
 					vka_buffer_t *draw_counts, uint32_t max_draw_count);
 void vka_draw_indexed_indirect_count(vka_command_buffer_t *command_buffer,
