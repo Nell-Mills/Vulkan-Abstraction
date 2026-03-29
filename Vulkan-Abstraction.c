@@ -2090,7 +2090,6 @@ int vka_get_image_requirements(vka_vulkan_t *vulkan, vka_image_t *image)
 	if (!image->allocation->requirements.memoryTypeBits)
 	{
 		image->allocation->requirements.memoryTypeBits = requirements.memoryTypeBits;
-		image->allocation->requirements.alignment = requirements.alignment;
 	}
 
 	if (image->allocation->requirements.memoryTypeBits != requirements.memoryTypeBits)
@@ -2101,9 +2100,13 @@ int vka_get_image_requirements(vka_vulkan_t *vulkan, vka_image_t *image)
 		return -1;
 	}
 
-	// Set offset of current image to current accumulated memory size:
-	image->offset = image->allocation->requirements.size;
-	image->allocation->requirements.size += requirements.size;
+	// Set offset of current image to current accumulated size (with alignment restrictions):
+	image->offset = 0;
+	while (image->offset < image->allocation->requirements.size)
+	{
+		image->offset += requirements.alignment;
+	}
+	image->allocation->requirements.size = image->offset + requirements.size;
 
 	return 0;
 }
