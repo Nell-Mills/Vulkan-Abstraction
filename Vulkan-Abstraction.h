@@ -248,6 +248,7 @@ typedef struct
 	/*---------------*
 	 * Configuration *
 	 *---------------*/
+	VkFilter filter;		// Default VK_FILTER_NEAREST.
 	VkBool32 anisotropy_enable;
 	float max_anisotropy;
 	VkBorderColor border_colour;
@@ -478,6 +479,7 @@ int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t 
 // Rendering:
 void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
 void vka_end_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
+void vka_end_rendering_no_barrier(vka_command_buffer_t *command_buffer);
 void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
 void vka_set_scissor(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
 void vka_bind_vertex_buffers(vka_command_buffer_t *command_buffer, vka_buffer_t *index_buffer,

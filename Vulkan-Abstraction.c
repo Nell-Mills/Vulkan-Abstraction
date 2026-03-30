@@ -1945,8 +1945,8 @@ int vka_create_sampler(vka_vulkan_t *vulkan, vka_sampler_t *sampler)
 	sampler_info.sType			= VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 	sampler_info.pNext			= NULL;
 	sampler_info.flags			= 0;
-	sampler_info.magFilter			= VK_FILTER_LINEAR;
-	sampler_info.minFilter			= VK_FILTER_LINEAR;
+	sampler_info.magFilter			= sampler->filter;
+	sampler_info.minFilter			= sampler->filter;
 	sampler_info.mipmapMode			= VK_SAMPLER_MIPMAP_MODE_LINEAR;
 	sampler_info.addressModeU		= VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	sampler_info.addressModeV		= VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -2593,6 +2593,11 @@ void vka_end_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *
 	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
 	vka_image_barrier(command_buffer, &barrier_info);
+}
+
+void vka_end_rendering_no_barrier(vka_command_buffer_t *command_buffer)
+{
+	vkCmdEndRendering(command_buffer->buffer);
 }
 
 void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
