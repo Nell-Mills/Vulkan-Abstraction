@@ -2426,27 +2426,8 @@ void vka_copy_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy
 
 void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer)
 {
-	/* Note - this is intended for scene uniforms, with size <= 65536.
-	 * Buffer's void *data member is used for the update. */
-	vka_barrier_info_t barrier_info = {0};
-	barrier_info.resource		= buffer;
-	barrier_info.src_access_mask	= VK_ACCESS_UNIFORM_READ_BIT;
-	barrier_info.dst_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-					VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
-	vka_buffer_barrier(command_buffer, &barrier_info);
-
+	// Buffer must have size <= 65536. Buffer's void *data member is used for the update.
 	vkCmdUpdateBuffer(command_buffer->buffer, buffer->buffer, 0, buffer->size, buffer->data);
-
-	barrier_info.src_access_mask	= VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier_info.dst_access_mask	= VK_ACCESS_UNIFORM_READ_BIT;
-	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_TRANSFER_BIT;
-	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-					VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-	vka_buffer_barrier(command_buffer, &barrier_info);
 }
 
 void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
