@@ -113,6 +113,8 @@ typedef struct
 	 * Configuration *
 	 *---------------*/
 	uint8_t fence_signaled;
+	VkCommandBufferUsageFlags flags;	// If 0, gets set to ...ONE_TIME_SUBMIT_BIT.
+	VkCommandBufferLevel level; 		// Default VK_COMMAND_BUFFER_LEVEL_PRIMARY.
 
 	uint8_t use_wait;
 	uint8_t use_signal;
@@ -259,7 +261,6 @@ typedef struct
 	char name[VKA_MAX_NAME_LENGTH];
 	VkBuffer buffer;
 	vka_allocation_t *allocation;
-	void *data; // Intended for scene uniform buffer updates. Is NOT managed by buffer struct.
 
 	/*---------------*
 	 * Configuration *
@@ -399,7 +400,9 @@ typedef struct
 
 typedef struct
 {
-	void *source;				// (vka_buffer_t *) or (vka_image_t *).
+	/* Source can be (vka_buffer_t *) or (vka_image_t *) for copies,
+	 * or for vkCmdUpdateBuffer it can be a pointer to the data. */
+	void *source;
 	void *destination;			// (vka_buffer_t *) or (vka_image_t *).
 	VkDeviceSize source_offset;
 	VkDeviceSize destination_offset;
@@ -442,6 +445,7 @@ int vka_begin_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command
 int vka_end_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 int vka_submit_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
 int vka_wait_for_fence(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffer);
+void vka_execute_commands(vka_command_buffer_t *primary, vka_command_buffer_t *secondary);
 
 // Descriptors:
 int vka_create_descriptor_pool(vka_vulkan_t *vulkan, vka_descriptor_pool_t *descriptor_pool);
@@ -472,7 +476,7 @@ void vka_buffer_barrier(vka_command_buffer_t *command_buffer, vka_barrier_info_t
 void vka_buffer_barrier_reverse(vka_command_buffer_t *command_buffer,
 				vka_barrier_info_t *barrier_info);
 void vka_copy_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info);
-void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer);
+void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info);
 void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info);
 int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t *buffers);
 
@@ -499,8 +503,10 @@ void vka_draw_indexed_indirect_count(vka_command_buffer_t *command_buffer,
 int vka_present_image(vka_vulkan_t *vulkan);
 
 // Compute:
-void vka_dispatch(vka_command_buffer_t *command_buffer, uint32_t group_count_x,
+void vka_dispatch(vka_command_buffer_t *command_buffer,uint32_t group_count_x,
 			uint32_t group_count_y, uint32_t group_count_z);
+void vka_dispatch_indirect(vka_command_buffer_t *command_buffer,
+	vka_buffer_t *dispatch_commands, VkDeviceSize command_offset);
 
 // Memory:
 int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation);

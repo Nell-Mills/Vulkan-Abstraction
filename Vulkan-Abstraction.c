@@ -1552,12 +1552,18 @@ int vka_create_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *comman
 {
 	vka_destroy_command_buffer(vulkan, command_buffer);
 
+	// If flags are 0, set to appropriate value:
+	if (!command_buffer->flags)
+	{
+		command_buffer->flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	}
+
 	VkCommandBufferAllocateInfo allocate_info;
 	memset(&allocate_info, 0, sizeof(allocate_info));
 	allocate_info.sType			= VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocate_info.pNext			= NULL;
 	allocate_info.commandPool		= vulkan->command_pool;
-	allocate_info.level			= VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocate_info.level			= command_buffer->level;
 	allocate_info.commandBufferCount	= 1;
 
 	if (vkAllocateCommandBuffers(vulkan->device, &allocate_info,
@@ -1605,12 +1611,23 @@ int vka_begin_command_buffer(vka_vulkan_t *vulkan, vka_command_buffer_t *command
 		return -1;
 	}
 
+	VkCommandBufferInheritanceInfo inheritance_info;
+	memset(&inheritance_info, 0, sizeof(inheritance_info));
+	inheritance_info.sType			= VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+	inheritance_info.pNext			= NULL;
+	inheritance_info.renderPass		= VK_NULL_HANDLE;
+	inheritance_info.subpass		= 0;
+	inheritance_info.framebuffer		= VK_NULL_HANDLE;
+	inheritance_info.occlusionQueryEnable	= VK_FALSE;
+	inheritance_info.queryFlags		= 0;
+	inheritance_info.pipelineStatistics	= 0;
+
 	VkCommandBufferBeginInfo begin_info;
 	memset(&begin_info, 0, sizeof(begin_info));
 	begin_info.sType		= VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	begin_info.pNext		= NULL;
-	begin_info.flags		= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	begin_info.pInheritanceInfo	= NULL;
+	begin_info.flags		= command_buffer->flags;
+	begin_info.pInheritanceInfo	= &inheritance_info;
 
 	if (vkBeginCommandBuffer(command_buffer->buffer, &begin_info) != VK_SUCCESS)
 	{
@@ -1677,6 +1694,11 @@ int vka_wait_for_fence(vka_vulkan_t *vulkan, vka_command_buffer_t *command_buffe
 	}
 
 	return 0;
+}
+
+void vka_execute_commands(vka_command_buffer_t *primary, vka_command_buffer_t *secondary)
+{
+	vkCmdExecuteCommands(primary->buffer, 1, &(secondary->buffer));
 }
 
 /***************
@@ -2424,10 +2446,13 @@ void vka_copy_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy
 		destination->buffer, 1, &buffer_copy_info);
 }
 
-void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_buffer_t *buffer)
+void vka_update_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
 {
-	// Buffer must have size <= 65536. Buffer's void *data member is used for the update.
-	vkCmdUpdateBuffer(command_buffer->buffer, buffer->buffer, 0, buffer->size, buffer->data);
+	vka_buffer_t *destination = (vka_buffer_t *)(copy_info->destination);
+
+	// Copy must have size <= 65536. Uses source from copy info as a pointer into host memory.
+	vkCmdUpdateBuffer(command_buffer->buffer, destination->buffer,
+		copy_info->destination_offset, copy_info->size, copy_info->source);
 }
 
 void vka_fill_buffer(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
@@ -2719,12 +2744,20 @@ void vka_dispatch(vka_command_buffer_t *command_buffer, uint32_t group_count_x,
 	vkCmdDispatch(command_buffer->buffer, group_count_x, group_count_y, group_count_z);
 }
 
+void vka_dispatch_indirect(vka_command_buffer_t *command_buffer,
+	vka_buffer_t *dispatch_commands, VkDeviceSize command_offset)
+{
+	vkCmdDispatchIndirect(command_buffer->buffer, dispatch_commands->buffer, command_offset);
+}
+
 /**********
  * Memory *
  **********/
 
 int vka_create_allocation(vka_vulkan_t *vulkan, vka_allocation_t *allocation)
 {
+	// TODO - check if allocation size exceeds max allocation size? Some implementations
+	// allow allocation larger than the limit anyway so might not be desirable.
 	if (!allocation->requirements.size)
 	{
 		snprintf(vulkan->error, VKA_MAX_ERROR_LENGTH,
