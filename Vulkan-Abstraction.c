@@ -1300,7 +1300,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	depth_info.minDepthBounds		= 0.f;
 	depth_info.maxDepthBounds		= 1.f;
 
-	// Blend:
+	// Blend (TODO - add config for dst and src alpha blend factors):
 	VkPipelineColorBlendAttachmentState blend_state;
 	memset(&blend_state, 0, sizeof(blend_state));
 	blend_state.blendEnable		= pipeline->blend_enable;
@@ -1339,7 +1339,7 @@ int vka_create_pipeline(vka_vulkan_t *vulkan, vka_pipeline_t *pipeline)
 	dynamic_state_info.dynamicStateCount	= 2;
 	dynamic_state_info.pDynamicStates	= dynamic_state;
 
-	// Rendering:
+	// Rendering (TODO - add config for multiple colour attachments and formats):
 	VkPipelineRenderingCreateInfo pipeline_rendering_info;
 	memset(&pipeline_rendering_info, 0, sizeof(pipeline_rendering_info));
 	pipeline_rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
@@ -2161,7 +2161,7 @@ void vka_image_barrier(vka_command_buffer_t *command_buffer, vka_barrier_info_t 
 	image_barrier.srcQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
 	image_barrier.dstQueueFamilyIndex		= VK_QUEUE_FAMILY_IGNORED;
 	image_barrier.image				= image->image;
-	image_barrier.subresourceRange.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT;
+	image_barrier.subresourceRange.aspectMask	= image->aspect_mask;
 	image_barrier.subresourceRange.baseMipLevel	= 0;
 	image_barrier.subresourceRange.levelCount	= image->mip_levels;
 	image_barrier.subresourceRange.baseArrayLayer	= 0;
@@ -2528,16 +2528,7 @@ int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t 
 
 void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
 {
-	vka_barrier_info_t barrier_info = {0};
-	barrier_info.resource		= render_info->colour_image;
-	barrier_info.src_access_mask	= VK_ACCESS_NONE;
-	barrier_info.dst_access_mask	= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	barrier_info.old_layout		= VK_IMAGE_LAYOUT_UNDEFINED;
-	barrier_info.new_layout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	vka_image_barrier(command_buffer, &barrier_info);
-
+	// TODO - allow for multiple colour images.
 	VkRenderingAttachmentInfo colour_info;
 	memset(&colour_info, 0, sizeof(colour_info));
 	colour_info.sType		= VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -2586,9 +2577,34 @@ void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t
 	vkCmdBeginRendering(command_buffer->buffer, &rendering_info);
 }
 
-void vka_end_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
+void vka_begin_rendering_barrier(vka_command_buffer_t *command_buffer,
+				vka_render_info_t *render_info)
 {
+	// TODO - allow for multiple colour images.
+	vka_barrier_info_t barrier_info = {0};
+	barrier_info.resource		= render_info->colour_image;
+	barrier_info.src_access_mask	= VK_ACCESS_NONE;
+	barrier_info.dst_access_mask	= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	barrier_info.old_layout		= VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier_info.new_layout		= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	vka_image_barrier(command_buffer, &barrier_info);
+
+	vka_begin_rendering(command_buffer, render_info);
+}
+
+void vka_end_rendering(vka_command_buffer_t *command_buffer)
+{
+	// TODO - allow for multiple colour images.
 	vkCmdEndRendering(command_buffer->buffer);
+}
+
+void vka_end_rendering_barrier(vka_command_buffer_t *command_buffer,
+				vka_render_info_t *render_info)
+{
+	// TODO - allow for multiple colour images.
+	vka_end_rendering(command_buffer);
 
 	vka_barrier_info_t barrier_info = {0};
 	barrier_info.resource		= render_info->colour_image;
@@ -2599,11 +2615,6 @@ void vka_end_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *
 	barrier_info.src_stage_mask	= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	barrier_info.dst_stage_mask	= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
 	vka_image_barrier(command_buffer, &barrier_info);
-}
-
-void vka_end_rendering_no_barrier(vka_command_buffer_t *command_buffer)
-{
-	vkCmdEndRendering(command_buffer->buffer);
 }
 
 void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info)
@@ -3624,6 +3635,35 @@ void vka_print_image(FILE *file, vka_image_t *image)
 
 	if (!image->image_view) { fprintf(file, "Image view\t\t\t\t= VK_NULL_HANDLE\n"); }
 	else { fprintf(file, "Image view\t\t\t\t= %p\n", image->image_view); }
+}
+
+void vka_print_descriptor_set(FILE *file, vka_descriptor_set_t *descriptor_set)
+{
+	fprintf(file, "************************************\n");
+	fprintf(file, "* Vulkan descriptor set debug info *\n");
+	fprintf(file, "************************************\n");
+
+	fprintf(file, "Descriptor set name: %s\n", descriptor_set->name);
+
+	fprintf(file, "\n");
+
+	if (!descriptor_set->layout)
+	{
+		fprintf(file, "Descriptor set layout\t\t\t= VK_NULL_HANDLE\n");
+	}
+	else { fprintf(file, "Descriptor set layout\t\t\t= %p\n", descriptor_set->layout); }
+
+	if (!descriptor_set->set)
+	{
+		fprintf(file, "Descriptor set\t\t\t\t= VK_NULL_HANDLE\n");
+	}
+	else { fprintf(file, "Descriptor set\t\t\t\t= %p\n", descriptor_set->set); }
+
+	if (!descriptor_set->data) { fprintf(file, "Data pointer\t\t\t\t= NULL\n"); }
+	else { fprintf(file, "Data pointer\t\t\t\t= %p\n", descriptor_set->data); }
+
+	if (!descriptor_set->pool) { fprintf(file, "Descriptor pool\t\t\t\t= NULL\n"); }
+	else { fprintf(file, "Descriptor pool\t\t\t\t= %p\n", descriptor_set->pool); }
 }
 
 void vka_print_shader(FILE *file, vka_shader_t *shader)

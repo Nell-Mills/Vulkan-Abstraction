@@ -47,6 +47,11 @@
 #define VKA_MAX_VERTEX_ATTRIBUTES 4
 #endif
 
+// TODO - this is unused. It's for pipelines.
+#ifndef VKA_MAX_COLOUR_ATTACHMENTS
+#define VKA_MAX_COLOUR_ATTACHMENTS 4
+#endif
+
 #ifndef VKA_MAX_PIPELINE_DESCRIPTOR_SETS
 #define VKA_MAX_PIPELINE_DESCRIPTOR_SETS 8
 #endif
@@ -482,8 +487,11 @@ int vka_set_up_buffers(vka_vulkan_t *vulkan, uint32_t num_buffers, vka_buffer_t 
 
 // Rendering:
 void vka_begin_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
-void vka_end_rendering(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
-void vka_end_rendering_no_barrier(vka_command_buffer_t *command_buffer);
+void vka_begin_rendering_barrier(vka_command_buffer_t *command_buffer,
+				vka_render_info_t *render_info);
+void vka_end_rendering(vka_command_buffer_t *command_buffer);
+void vka_end_rendering_barrier(vka_command_buffer_t *command_buffer,
+				vka_render_info_t *render_info);
 void vka_set_viewport(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
 void vka_set_scissor(vka_command_buffer_t *command_buffer, vka_render_info_t *render_info);
 void vka_bind_vertex_buffers(vka_command_buffer_t *command_buffer, vka_buffer_t *index_buffer,
@@ -558,6 +566,7 @@ char *vka_debug_get_type(VkDebugUtilsMessageTypeFlagsEXT type);
 void vka_print_vulkan(FILE *file, vka_vulkan_t *vulkan);
 void vka_print_command_buffer(FILE *file, vka_command_buffer_t *command_buffer);
 void vka_print_image(FILE *file, vka_image_t *image);
+void vka_print_descriptor_set(FILE *file, vka_descriptor_set_t *descriptor_set);
 void vka_print_shader(FILE *file, vka_shader_t *shader);
 void vka_print_pipeline(FILE *file, vka_pipeline_t *pipeline);
 void vka_print_descriptor_pool(FILE *file, vka_descriptor_pool_t *descriptor_pool);
