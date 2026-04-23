@@ -411,6 +411,8 @@ typedef struct
 	void *destination;			// (vka_buffer_t *) or (vka_image_t *).
 	VkDeviceSize source_offset;
 	VkDeviceSize destination_offset;
+	VkImageLayout source_layout;
+	VkImageLayout destination_layout;
 	VkDeviceSize size;			// If 0, uses smaller buffer size.
 	uint32_t data;				// For vkCmdFillBuffer().
 } vka_copy_info_t;
@@ -469,6 +471,7 @@ void vka_destroy_image(vka_vulkan_t *vulkan, vka_image_t *image);
 int vka_get_image_requirements(vka_vulkan_t *vulkan, vka_image_t *image);
 int vka_bind_image_memory(vka_vulkan_t *vulkan, vka_image_t *image);
 void vka_image_barrier(vka_command_buffer_t *command_buffer, vka_barrier_info_t *barrier_info);
+void vka_copy_image(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info);
 void vka_copy_buffer_to_image(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info);
 int vka_set_up_images(vka_vulkan_t *vulkan, uint32_t num_images, vka_image_t *images);
 

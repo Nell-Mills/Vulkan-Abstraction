@@ -2171,6 +2171,48 @@ void vka_image_barrier(vka_command_buffer_t *command_buffer, vka_barrier_info_t 
 		barrier_info->dst_stage_mask, 0, 0, NULL, 0, NULL, 1, &image_barrier);
 }
 
+void vka_copy_image(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
+{
+	vka_image_t *source = (vka_image_t *)(copy_info->source);
+	vka_image_t *destination = (vka_image_t *)(copy_info->destination);
+
+	// Initialise copy info:
+	VkImageCopy image_copy_info;
+	memset(&image_copy_info, 0, sizeof(image_copy_info));
+
+	// Set source attributes:
+	image_copy_info.srcSubresource.aspectMask	= source->aspect_mask;
+	image_copy_info.srcSubresource.mipLevel		= 0;
+	image_copy_info.srcSubresource.baseArrayLayer	= 0;
+	image_copy_info.srcSubresource.layerCount	= 1;
+	image_copy_info.srcOffset.x			= 0;
+	image_copy_info.srcOffset.y			= 0;
+	image_copy_info.srcOffset.z			= 0;
+
+	// Set destination attributes:
+	image_copy_info.dstSubresource.aspectMask	= destination->aspect_mask;
+	image_copy_info.dstSubresource.mipLevel		= 0;
+	image_copy_info.dstSubresource.baseArrayLayer	= 0;
+	image_copy_info.dstSubresource.layerCount	= 1;
+	image_copy_info.dstOffset.x			= 0;
+	image_copy_info.dstOffset.y			= 0;
+	image_copy_info.dstOffset.z			= 0;
+
+	// Choose extent based on which image is smaller:
+	if (source->width < destination->width) { image_copy_info.extent.width = source->width; }
+	else { image_copy_info.extent.width = destination->width; }
+	if (source->height < destination->height)
+	{
+		image_copy_info.extent.height = source->height;
+	}
+	else { image_copy_info.extent.height = destination->height; }
+	image_copy_info.extent.depth = 1;
+
+	// Copy source to destination:
+	vkCmdCopyImage(command_buffer->buffer, source->image, copy_info->source_layout,
+		destination->image, copy_info->destination_layout, 1, &image_copy_info);
+}
+
 void vka_copy_buffer_to_image(vka_command_buffer_t *command_buffer, vka_copy_info_t *copy_info)
 {
 	vka_buffer_t *source = (vka_buffer_t *)(copy_info->source);
